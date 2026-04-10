@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "Restaurant": {
+      "title": "Restaurant",
+      "description": "A restaurant using the queue system",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The name of the restaurant" },
+        "description": { "type": "string", "description": "A short description" },
+        "address": { "type": "string", "description": "The physical address" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "createdAt"]
+    },
+    "QueueEntry": {
+      "title": "Queue Entry",
+      "description": "A customer waiting in the queue",
+      "type": "object",
+      "properties": {
+        "restaurantId": { "type": "string", "description": "ID of the restaurant" },
+        "customerName": { "type": "string", "description": "Name of the customer" },
+        "phoneNumber": { "type": "string", "description": "Phone number for notifications" },
+        "partySize": { "type": "integer", "description": "Number of people in the party" },
+        "status": { "type": "string", "enum": ["waiting", "notified", "seated", "cancelled", "expired"], "description": "Current status in the queue" },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "notifiedAt": { "type": "string", "format": "date-time" },
+        "claimExpiresAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["restaurantId", "customerName", "phoneNumber", "partySize", "status", "joinedAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "A waiter or admin user",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["waiter", "receptionist", "admin"] },
+        "restaurantId": { "type": "string", "description": "The restaurant this user belongs to" }
+      },
+      "required": ["email", "role", "restaurantId"]
+    }
+  },
+  "firestore": {
+    "/restaurants/{restaurantId}": {
+      "schema": "Restaurant",
+      "description": "Restaurant details"
+    },
+    "/restaurants/{restaurantId}/queue/{entryId}": {
+      "schema": "QueueEntry",
+      "description": "Customers in the queue for a specific restaurant"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles for waiters and admins"
+    }
+  }
+}

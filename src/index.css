@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  --radius-4xl: 2rem;
+  --radius-5xl: 3rem;
+}
+
+@layer base {
+  html, body {
+    @apply overflow-x-hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-[#050505] text-white antialiased min-h-screen;
+    background-image: 
+      radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.08) 0%, transparent 40%),
+      radial-gradient(circle at 100% 100%, rgba(168, 85, 247, 0.08) 0%, transparent 40%);
+    background-attachment: fixed;
+  }
+}
+
+@layer utilities {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 1.25rem);
+  }
+  
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .glass {
+    @apply bg-white/[0.03] backdrop-blur-3xl border border-white/[0.08];
+  }
+  
+  .glass-morphism {
+    @apply bg-white/[0.05] backdrop-blur-2xl border border-white/[0.1] shadow-[0_8px_32px_0_rgba(0,0,0,0.37)];
+  }
+
+  .mesh-gradient-purple {
+    background: radial-gradient(circle at 20% 30%, #7928ca 0%, transparent 70%),
+                radial-gradient(circle at 80% 70%, #ff0080 0%, transparent 70%),
+                #1a1a1a;
+  }
+
+  .mesh-gradient-blue {
+    background: radial-gradient(circle at 20% 30%, #007cf0 0%, transparent 70%),
+                radial-gradient(circle at 80% 70%, #00dfd8 0%, transparent 70%),
+                #1a1a1a;
+  }
+
+  .mesh-gradient-orange {
+    background: radial-gradient(circle at 20% 30%, #f59e0b 0%, transparent 70%),
+                radial-gradient(circle at 80% 70%, #ef4444 0%, transparent 70%),
+                #1a1a1a;
+  }
+  
+  .mesh-gradient-green {
+    background: radial-gradient(circle at 20% 30%, #10b981 0%, transparent 70%),
+                radial-gradient(circle at 80% 70%, #3b82f6 0%, transparent 70%),
+                #1a1a1a;
+  }
+}

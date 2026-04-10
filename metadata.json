@@ -1,0 +1,5 @@
+{
+  "name": "QueueFlow",
+  "description": "A frictionless virtual queue system for restaurants. Scan QR, join queue, and get notified in real-time.",
+  "requestFramePermissions": []
+}
