@@ -1,6 +1,6 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { db, auth } from '../lib/firebase';
-import { collection, onSnapshot, query, doc, setDoc, getDocs, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, doc, setDoc, getDoc } from 'firebase/firestore';
 import { QRCodeSVG } from 'qrcode.react';
 import { Plus, Store, QrCode, Settings, Users, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
