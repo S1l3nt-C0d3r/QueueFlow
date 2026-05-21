@@ -2,15 +2,17 @@ import { useState, useEffect, FormEvent } from 'react';
 import { db, auth } from '../lib/firebase';
 import { collection, onSnapshot, query, doc, setDoc, getDoc } from 'firebase/firestore';
 import { QRCodeSVG } from 'qrcode.react';
-import { Plus, Store, QrCode, Settings, Users, LogOut } from 'lucide-react';
+import { Plus, Store, QrCode, Settings, Users, LogOut, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
+import MenuManagement from './MenuManagement';
 
 export default function AdminView() {
   const [restaurants, setRestaurants] = useState<any[]>([]);
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [loading, setLoading] = useState(true);
+  const [selectedRestaurant, setSelectedRestaurant] = useState<any>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -63,9 +65,30 @@ export default function AdminView() {
       </nav>
 
       <main className="p-4 sm:p-8 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
-        {/* Create Restaurant */}
-        <div className="lg:col-span-4">
-          <div className="glass-morphism p-6 sm:p-8 rounded-3xl sm:rounded-4xl relative overflow-hidden">
+        {selectedRestaurant ? (
+          // Menu Management View
+          <div className="lg:col-span-12">
+            <div className="flex items-center gap-4 mb-8">
+              <button
+                onClick={() => setSelectedRestaurant(null)}
+                className="h-10 w-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-all"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <div>
+                <h2 className="text-2xl font-display font-bold text-white">{selectedRestaurant.name}</h2>
+                <p className="text-white/50 text-sm mt-1">Menu Management</p>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.01] border border-white/10 rounded-4xl p-8">
+              <MenuManagement restaurantId={selectedRestaurant.id} />
+            </div>
+          </div>
+        ) : (
+          <>
+          <div className="lg:col-span-4">
+            <div className="glass-morphism p-6 sm:p-8 rounded-3xl sm:rounded-4xl relative overflow-hidden">
             <div className="absolute inset-0 mesh-gradient-purple opacity-10" />
             <div className="relative z-10">
               <h2 className="text-xl sm:text-2xl font-display font-bold text-white mb-6 sm:mb-8 flex items-center gap-3">
@@ -170,12 +193,20 @@ export default function AdminView() {
                         Link
                       </button>
                     </div>
+                    <button
+                      onClick={() => setSelectedRestaurant(rest)}
+                      className="w-full py-3 bg-green-500 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-green-600 shadow-lg shadow-green-500/20 transition-all"
+                    >
+                      Menu
+                    </button>
                   </div>
                 </div>
               </div>
             ))}
           </div>
         </div>
+        </>
+        )}
       </main>
     </div>
   );

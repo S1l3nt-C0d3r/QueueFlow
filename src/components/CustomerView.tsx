@@ -2,10 +2,11 @@ import { useState, useEffect, FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { collection, addDoc, onSnapshot, query, where, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
-import { Users, Clock, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { Users, Clock, CheckCircle2, XCircle, AlertCircle, Utensils } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { differenceInSeconds } from 'date-fns';
+import PreorderScreen from './PreorderScreen';
 
 export default function CustomerView() {
   const { restaurantId = 'default' } = useParams();
@@ -18,6 +19,7 @@ export default function CustomerView() {
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [showPreorder, setShowPreorder] = useState(false);
 
   useEffect(() => {
     // Timer for notified status
@@ -148,6 +150,18 @@ export default function CustomerView() {
   const myPosition = myEntry ? queue.findIndex(e => e.id === myEntry.id) + 1 : -1;
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
+
+  // Show preorder screen if in preorder mode
+  if (showPreorder && myEntry && myEntry.status === 'waiting') {
+    return (
+      <PreorderScreen 
+        restaurantId={restaurantId}
+        queueEntryId={myEntry.id}
+        onBack={() => setShowPreorder(false)}
+        customerName={myEntry.customerName}
+      />
+    );
+  }
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-[#050505] pb-safe font-sans selection:bg-indigo-500/30">
@@ -326,6 +340,14 @@ export default function CustomerView() {
                         <p className="text-xl sm:text-2xl font-display font-bold text-white tracking-tight">{myPosition - 1}</p>
                       </div>
                     </div>
+
+                    <button
+                      onClick={() => setShowPreorder(true)}
+                      className="w-full py-6 sm:py-8 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold rounded-3xl shadow-2xl shadow-emerald-500/30 hover:from-emerald-600 hover:to-teal-600 active:scale-[0.98] transition-all text-lg sm:text-xl flex items-center justify-center gap-3 border border-emerald-400/20"
+                    >
+                      <Utensils className="h-6 w-6 sm:h-7 sm:w-7" />
+                      <span>Preorder Food</span>
+                    </button>
 
                     <button
                       onClick={handleCancel}

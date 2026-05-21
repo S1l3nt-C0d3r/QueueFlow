@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { db, auth } from '../lib/firebase';
 import { collection, onSnapshot, query, where, orderBy, doc, getDoc, updateDoc, Unsubscribe } from 'firebase/firestore';
-import { Users, Clock, CheckCircle2, XCircle, AlertCircle, LogOut, LayoutDashboard, History } from 'lucide-react';
+import { Users, Clock, CheckCircle2, XCircle, AlertCircle, LogOut, LayoutDashboard, History, ShoppingCart } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { cn } from '../lib/utils';
+import OrdersView from './OrdersView';
 
 enum OperationType {
   CREATE = 'create',
@@ -37,6 +38,7 @@ export default function WaiterView() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'queue' | 'orders'>('queue');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -128,6 +130,18 @@ export default function WaiterView() {
     }
   };
 
+  const handleSeated = async (entryId: string) => {
+    if (!restaurant) return;
+    try {
+      await updateDoc(doc(db, 'restaurants', restaurant.id, 'queue', entryId), {
+        status: 'seated',
+        seatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `restaurants/${restaurant.id}/queue/${entryId}`);
+    }
+  };
+
   const handleLogout = () => {
     auth.signOut();
     navigate('/login');
@@ -187,7 +201,42 @@ export default function WaiterView() {
       </nav>
 
       <main className="p-4 sm:p-8 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
-        {/* Left Column: Stats & Action */}
+        {/* View Tabs */}
+        <div className="lg:col-span-12">
+          <div className="flex gap-3 mb-6">
+            <button
+              onClick={() => setViewMode('queue')}
+              className={cn(
+                "px-4 sm:px-6 py-3 rounded-xl font-bold text-sm sm:text-base transition-all flex items-center gap-2",
+                viewMode === 'queue'
+                  ? "bg-purple-500 text-white shadow-lg shadow-purple-500/20"
+                  : "bg-white/5 text-white/60 border border-white/10 hover:bg-white/10"
+              )}
+            >
+              <Users className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span>Queue</span>
+            </button>
+            <button
+              onClick={() => setViewMode('orders')}
+              className={cn(
+                "px-4 sm:px-6 py-3 rounded-xl font-bold text-sm sm:text-base transition-all flex items-center gap-2",
+                viewMode === 'orders'
+                  ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
+                  : "bg-white/5 text-white/60 border border-white/10 hover:bg-white/10"
+              )}
+            >
+              <ShoppingCart className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span>Orders</span>
+            </button>
+          </div>
+        </div>
+
+        {viewMode === 'orders' ? (
+          <div className="lg:col-span-12">
+            <OrdersView restaurantId={restaurant?.id || urlRestaurantId || 'default'} />
+          </div>
+        ) : (
+          <>
         <div className="lg:col-span-4 space-y-6 sm:space-y-8">
           <div className="glass-morphism p-6 sm:p-8 rounded-3xl sm:rounded-4xl relative overflow-hidden">
             <div className="absolute inset-0 mesh-gradient-purple opacity-10" />
@@ -290,13 +339,22 @@ export default function WaiterView() {
                       </div>
                     </div>
 
-                    <div className="shrink-0">
+                    <div className="shrink-0 flex flex-col gap-2">
                       {entry.status === 'notified' ? (
-                        <div className="px-3 sm:px-6 py-2 sm:py-3 bg-green-500/10 text-green-400 text-[9px] sm:text-xs font-black uppercase tracking-[0.2em] rounded-xl sm:rounded-2xl border border-green-500/20 flex items-center gap-1.5 sm:gap-2">
-                          <div className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
-                          <span className="hidden sm:inline">Notified</span>
-                          <span className="sm:hidden">Ready</span>
-                        </div>
+                        <>
+                          <div className="px-3 sm:px-6 py-2 sm:py-3 bg-green-500/10 text-green-400 text-[9px] sm:text-xs font-black uppercase tracking-[0.2em] rounded-xl sm:rounded-2xl border border-green-500/20 flex items-center gap-1.5 sm:gap-2">
+                            <div className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+                            <span className="hidden sm:inline">Notified</span>
+                            <span className="sm:hidden">Ready</span>
+                          </div>
+                          <button
+                            onClick={() => handleSeated(entry.id)}
+                            className="px-3 sm:px-6 py-2 sm:py-3 bg-blue-500 text-white text-[9px] sm:text-xs font-black uppercase tracking-[0.2em] rounded-xl sm:rounded-2xl hover:bg-blue-600 active:scale-[0.98] transition-all text-center"
+                          >
+                            <span className="hidden sm:inline">Seated</span>
+                            <span className="sm:hidden">Done</span>
+                          </button>
+                        </>
                       ) : (
                         <div className="px-3 sm:px-6 py-2 sm:py-3 bg-white/5 text-white/20 text-[9px] sm:text-xs font-black uppercase tracking-[0.2em] rounded-xl sm:rounded-2xl border border-white/5">
                           Waiting
@@ -323,6 +381,8 @@ export default function WaiterView() {
             )}
           </div>
         </div>
+        </>
+        )}
       </main>
     </div>
   );

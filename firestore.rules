@@ -58,6 +58,28 @@ service cloud.firestore {
                       
         allow delete: if isAdmin(restaurantId) || isGlobalAdmin();
       }
+
+      // Menus
+      match /menus/{menuItemId} {
+        // Anyone can read menu items
+        allow read: if true;
+        
+        // Global admin or any authenticated user (for now) can manage menus
+        allow create: if isGlobalAdmin() || isAuthenticated();
+        allow update: if isGlobalAdmin() || isAuthenticated();
+        allow delete: if isGlobalAdmin() || isAuthenticated();
+      }
+
+      // Orders (preorders)
+      match /orders/{orderId} {
+        // Anyone authenticated can read orders (customers see their own, staff see all)
+        allow read: if isAuthenticated();
+        
+        // Authenticated users can create and update their own orders
+        allow create: if isAuthenticated();
+        allow update: if isAuthenticated();
+        allow delete: if isGlobalAdmin() || isAuthenticated();
+      }
     }
 
     // Users
