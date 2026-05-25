@@ -1,7 +1,7 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, useRef } from 'react';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, query, where, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { Plus, Trash2, Edit2, X } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, ChevronDown, CheckCircle, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -104,26 +104,54 @@ export default function MenuManagement({ restaurantId }: Props) {
       setPrice('');
       setCategory('Main Course');
       setShowForm(false);
-      alert(editingId ? 'Menu item updated!' : 'Menu item added successfully!');
+      setNotification({
+        type: 'success',
+        message: editingId ? 'Menu item updated!' : 'Menu item added successfully!'
+      });
     } catch (err) {
       console.error('Error saving menu item:', err);
-      alert('Failed to save menu item. Please try again.');
+      setNotification({
+        type: 'error',
+        message: 'Failed to save menu item. Please try again.'
+      });
     }
     setSaving(false);
   };
 
-  const handleDelete = async (itemId: string) => {
-    if (!confirm('Delete this item?')) return;
+  const handleDelete = (item: MenuItem) => {
+    setDeleteConfirm({
+      show: true,
+      itemId: item.id,
+      itemName: item.name
+    });
+  };
+  
+  const confirmDelete = async () => {
+    if (!deleteConfirm.itemId) return;
     
+    setDeleting(true);
     try {
       await deleteDoc(
-        doc(db, 'restaurants', restaurantId, 'menus', itemId)
+        doc(db, 'restaurants', restaurantId, 'menus', deleteConfirm.itemId)
       );
-      alert('Item deleted successfully!');
+      setNotification({
+        type: 'success',
+        message: 'Item deleted successfully!'
+      });
+      setDeleteConfirm({ show: false, itemId: null, itemName: '' });
     } catch (err) {
       console.error('Error deleting menu item:', err);
-      alert('Failed to delete item. Please try again.');
+      setNotification({
+        type: 'error',
+        message: 'Failed to delete item. Please try again.'
+      });
+    } finally {
+      setDeleting(false);
     }
+  };
+  
+  const cancelDelete = () => {
+    setDeleteConfirm({ show: false, itemId: null, itemName: '' });
   };
 
   const handleEdit = (item: MenuItem) => {
@@ -145,6 +173,50 @@ export default function MenuManagement({ restaurantId }: Props) {
   };
 
   const categories = [...new Set(menuItems.map(item => item.category))];
+  const categoryOptions = ['Main Course', 'Appetizers', 'Desserts', 'Beverages', 'Sides'];
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  
+  // Notification state
+  const [notification, setNotification] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  
+  // Delete confirmation state
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    show: boolean;
+    itemId: string | null;
+    itemName: string;
+  }>({
+    show: false,
+    itemId: null,
+    itemName: ''
+  });
+  
+  const [deleting, setDeleting] = useState(false);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setCategoryDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+  
+  // Auto-dismiss notification after 4 seconds
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => {
+        setNotification(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
 
   if (loading) {
     return (
@@ -227,14 +299,15 @@ export default function MenuManagement({ restaurantId }: Props) {
                 <div className="space-y-2">
                   <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest ml-1">Price</label>
                   <div className="relative">
-                    <span className="absolute left-5 top-4 text-white/40 font-medium">$</span>
+                    <span className="absolute left-5 top-4 text-white/40 font-medium">Rs.</span>
                     <input
                       required
                       type="number"
                       step="0.01"
+                      min="0"
                       value={price}
                       onChange={e => setPrice(e.target.value)}
-                      className="w-full pl-8 pr-5 py-4 rounded-2xl bg-white/5 border border-white/10 focus:border-green-500/50 focus:ring-4 focus:ring-green-500/10 outline-none transition-all text-white placeholder:text-white/20 text-base"
+                      className="w-full pl-12 pr-5 py-4 rounded-2xl bg-white/5 border border-white/10 focus:border-green-500/50 focus:ring-4 focus:ring-green-500/10 outline-none transition-all text-white placeholder:text-white/20 text-base"
                       placeholder="12.99"
                     />
                   </div>
@@ -243,17 +316,46 @@ export default function MenuManagement({ restaurantId }: Props) {
 
               <div className="space-y-2">
                 <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest ml-1">Category</label>
-                <select
-                  value={category}
-                  onChange={e => setCategory(e.target.value)}
-                  className="w-full px-5 py-4 rounded-2xl bg-white/5 border border-white/10 focus:border-green-500/50 focus:ring-4 focus:ring-green-500/10 outline-none transition-all text-white text-base"
-                >
-                  <option value="Main Course">Main Course</option>
-                  <option value="Appetizers">Appetizers</option>
-                  <option value="Desserts">Desserts</option>
-                  <option value="Beverages">Beverages</option>
-                  <option value="Sides">Sides</option>
-                </select>
+                <div ref={dropdownRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
+                    className="w-full px-5 py-4 rounded-2xl bg-white/5 border border-white/10 hover:border-white/20 focus:border-green-500/50 focus:ring-4 focus:ring-green-500/10 outline-none transition-all text-white text-base flex items-center justify-between"
+                  >
+                    <span>{category}</span>
+                    <ChevronDown className={cn("h-5 w-5 text-white/60 transition-transform", categoryDropdownOpen && "rotate-180")} />
+                  </button>
+                  
+                  <AnimatePresence>
+                    {categoryDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className="absolute top-full left-0 right-0 mt-2 z-50 rounded-2xl bg-black border border-white/10 backdrop-blur-3xl overflow-hidden"
+                      >
+                        {categoryOptions.map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            onClick={() => {
+                              setCategory(option);
+                              setCategoryDropdownOpen(false);
+                            }}
+                            className={cn(
+                              "w-full px-5 py-3 text-left transition-all text-base font-medium border-b border-white/5 last:border-b-0",
+                              category === option
+                                ? "bg-green-500/20 text-green-400"
+                                : "text-white/70 hover:bg-white/5 hover:text-white"
+                            )}
+                          >
+                            {option}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -333,7 +435,7 @@ export default function MenuManagement({ restaurantId }: Props) {
                         <Edit2 className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => handleDelete(item.id)}
+                        onClick={() => handleDelete(item)}
                         className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -346,6 +448,79 @@ export default function MenuManagement({ restaurantId }: Props) {
           ))
         )}
       </div>
+      
+      {/* Notification Toast */}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={cn(
+              "fixed top-4 right-4 z-50 p-4 rounded-2xl flex items-center gap-3 backdrop-blur-3xl border max-w-md",
+              notification.type === 'success'
+                ? "bg-green-500/20 border-green-500/30"
+                : "bg-red-500/20 border-red-500/30"
+            )}
+          >
+            {notification.type === 'success' ? (
+              <CheckCircle className="h-5 w-5 text-green-400 flex-shrink-0" />
+            ) : (
+              <AlertCircle className="h-5 w-5 text-red-400 flex-shrink-0" />
+            )}
+            <p className={cn(
+              "text-sm font-medium",
+              notification.type === 'success' ? "text-green-200" : "text-red-200"
+            )}>
+              {notification.message}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deleteConfirm.show && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={cancelDelete}
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50"
+            >
+              <div className="glass-morphism p-6 rounded-3xl border border-white/10 max-w-sm mx-4">
+                <h3 className="text-lg font-bold text-white mb-2">Delete Menu Item?</h3>
+                <p className="text-white/60 text-sm mb-6">
+                  Are you sure you want to delete <span className="font-semibold text-white">"{deleteConfirm.itemName}"</span>? This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={cancelDelete}
+                    disabled={deleting}
+                    className="flex-1 py-3 bg-white/5 text-white/60 font-medium rounded-2xl border border-white/10 hover:bg-white/10 transition-all disabled:opacity-50 text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmDelete}
+                    disabled={deleting}
+                    className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-xl shadow-red-500/20 hover:bg-red-600 active:scale-[0.98] transition-all disabled:opacity-50 text-sm"
+                  >
+                    {deleting ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

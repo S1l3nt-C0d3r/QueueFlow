@@ -15,6 +15,10 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
     
+    function isGlobalAdmin() {
+      return isAuthenticated() && request.auth.token.email == "incrediblegamer64@gmail.com" && request.auth.token.email_verified == true;
+    }
+
     function isWaiter(restaurantId) {
       return isAuthenticated() && getUserData().role == 'waiter' && getUserData().restaurantId == restaurantId;
     }
@@ -27,31 +31,21 @@ service cloud.firestore {
       return isAuthenticated() && getUserData().role == 'admin' && getUserData().restaurantId == restaurantId;
     }
 
-    function isGlobalAdmin() {
-      return isAuthenticated() && request.auth.token.email == "incrediblegamer64@gmail.com" && request.auth.token.email_verified == true;
-    }
-
     // Restaurants
     match /restaurants/{restaurantId} {
       allow read: if true; // Customers need to see restaurant info
-      allow write: if isGlobalAdmin() || isAdmin(restaurantId);
+      allow create, update, delete: if isGlobalAdmin();
       
       // Queue
       match /queue/{entryId} {
-        // Customers can read their own entry or the general queue status (limited)
-        // For simplicity in MVP, we allow reading the queue to show "position"
         allow read: if true; 
         
-        // Customers can join the queue (create)
         allow create: if request.resource.data.status == 'waiting' 
                       && request.resource.data.restaurantId == restaurantId;
         
-        // Customers can cancel their own entry or mark as expired
-        // Waiters can update status to 'notified'
-        // Receptionists can update status to 'seated' or 'cancelled'
         allow update: if (request.resource.data.status == 'cancelled' && resource.data.status == 'waiting')
                       || (request.resource.data.status == 'expired' && resource.data.status == 'notified')
-                      || (isWaiter(restaurantId) && (request.resource.data.status == 'notified'))
+                      || (isWaiter(restaurantId) && request.resource.data.status == 'notified')
                       || (isReceptionist(restaurantId) && (request.resource.data.status == 'seated' || request.resource.data.status == 'cancelled'))
                       || isAdmin(restaurantId)
                       || isGlobalAdmin();
@@ -59,33 +53,29 @@ service cloud.firestore {
         allow delete: if isAdmin(restaurantId) || isGlobalAdmin();
       }
 
-      // Menus
+      // Menus - RESTRICTED: Only admin and global admin can write
       match /menus/{menuItemId} {
-        // Anyone can read menu items
         allow read: if true;
         
-        // Global admin or any authenticated user (for now) can manage menus
-        allow create: if isGlobalAdmin() || isAuthenticated();
-        allow update: if isGlobalAdmin() || isAuthenticated();
-        allow delete: if isGlobalAdmin() || isAuthenticated();
+        allow create, update: if isGlobalAdmin() || isAdmin(restaurantId);
+        allow delete: if isGlobalAdmin() || isAdmin(restaurantId);
       }
 
       // Orders (preorders)
       match /orders/{orderId} {
-        // Anyone authenticated can read orders (customers see their own, staff see all)
         allow read: if isAuthenticated();
         
-        // Authenticated users can create and update their own orders
-        allow create: if isAuthenticated();
-        allow update: if isAuthenticated();
-        allow delete: if isGlobalAdmin() || isAuthenticated();
+        allow create, update: if isAuthenticated();
+        allow delete: if isGlobalAdmin() || isAdmin(restaurantId);
       }
     }
 
-    // Users
+    // Users - RESTRICTED: Only own profile or global admin
     match /users/{userId} {
       allow read: if isOwner(userId) || isGlobalAdmin();
-      allow write: if isGlobalAdmin() || (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'restaurantId']));
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'restaurantId', 'uid']);
+      allow delete: if isGlobalAdmin();
     }
   }
 }

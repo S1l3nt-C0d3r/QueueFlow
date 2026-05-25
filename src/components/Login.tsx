@@ -1,23 +1,69 @@
-import { useState } from 'react';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { useState, useEffect } from 'react';
+import { signInWithPopup, GoogleAuthProvider, User } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { useNavigate } from 'react-router-dom';
-import { LogIn } from 'lucide-react';
+import { LogIn, Loader } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useUserRole } from '../hooks/useUserRole';
+import UserOnboarding from './UserOnboarding';
 
 export default function Login() {
   const [error, setError] = useState('');
+  const [user, setUser] = useState<User | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const navigate = useNavigate();
+  const { profile, loading } = useUserRole(user);
+
+  useEffect(() => {
+    // If user has a complete profile, redirect to their dashboard
+    if (user && profile && !loading) {
+      if (profile.role === 'global_admin') {
+        navigate('/admin');
+      } else if (profile.role === 'waiter') {
+        navigate(`/waiter/${profile.restaurantId}`);
+      } else if (profile.role === 'receptionist') {
+        navigate(`/receptionist/${profile.restaurantId}`);
+      } else if (profile.role === 'admin') {
+        navigate('/admin');
+      }
+    }
+  }, [profile, loading, user, navigate]);
 
   const handleLogin = async () => {
+    setIsSigningIn(true);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      navigate('/waiter');
+      const result = await signInWithPopup(auth, provider);
+      setUser(result.user);
+      // Loading will be handled by useUserRole hook
     } catch (err: any) {
       setError(err.message);
+      setIsSigningIn(false);
     }
   };
+
+  // Show onboarding if user is logged in but doesn't have a profile
+  if (user && loading === false && !profile) {
+    return <UserOnboarding user={user} />;
+  }
+
+  // Show loading state while checking profile
+  if (user && loading) {
+    return (
+      <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center">
+        <div className="text-center">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+            className="flex justify-center mb-4"
+          >
+            <Loader className="h-12 w-12 text-indigo-500" />
+          </motion.div>
+          <p className="text-white/60">Setting up your profile...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#050505] px-4 font-sans relative overflow-hidden pb-safe pt-safe">
@@ -53,10 +99,22 @@ export default function Login() {
         <div className="space-y-4">
           <button
             onClick={handleLogin}
-            className="w-full flex items-center justify-center gap-3 px-6 py-5 border border-white/10 text-white font-bold rounded-2xl bg-white/5 hover:bg-white/10 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-2xl"
+            disabled={isSigningIn}
+            className="w-full flex items-center justify-center gap-3 px-6 py-5 border border-white/10 text-white font-bold rounded-2xl bg-white/5 hover:bg-white/10 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="h-5 w-5" alt="Google" />
-            Sign in with Google
+            {isSigningIn ? (
+              <>
+                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity }}>
+                  <Loader className="h-5 w-5" />
+                </motion.div>
+                Signing in...
+              </>
+            ) : (
+              <>
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="h-5 w-5" alt="Google" />
+                Sign in with Google
+              </>
+            )}
           </button>
           
           <p className="text-center text-[10px] text-white/20 font-bold uppercase tracking-widest">
