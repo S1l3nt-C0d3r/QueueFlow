@@ -21,8 +21,8 @@ export default function CustomerView() {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [showPreorder, setShowPreorder] = useState(false);
 
+  // Countdown timer for notified status
   useEffect(() => {
-    // Timer for notified status
     let timer: any;
     if (myEntry?.status === 'notified' && myEntry.claimExpiresAt) {
       const updateTimer = async () => {
@@ -36,7 +36,6 @@ export default function CustomerView() {
             await updateDoc(doc(db, 'restaurants', restaurantId, 'queue', myEntry.id), {
               status: 'expired'
             });
-            // Local storage cleanup will happen via onSnapshot
           } catch (err) {
             console.error('Failed to mark as expired:', err);
           }
@@ -52,6 +51,7 @@ export default function CustomerView() {
     return () => clearInterval(timer);
   }, [myEntry, restaurantId]);
 
+  // Load restaurant and queue data
   useEffect(() => {
     // Fetch restaurant details
     const fetchRestaurant = async () => {
@@ -91,8 +91,6 @@ export default function CustomerView() {
               if (entryDoc.exists()) {
                 const data = entryDoc.data();
                 setMyEntry({ id: entryDoc.id, ...data });
-                // If it's seated or cancelled, we might want to clear it eventually, 
-                // but for 'expired' we definitely want to show the message.
               } else {
                 localStorage.removeItem(`queueEntry_${restaurantId}`);
                 setMyEntry(null);
@@ -124,8 +122,6 @@ export default function CustomerView() {
     try {
       const docRef = await addDoc(collection(db, 'restaurants', restaurantId, 'queue'), newEntryData);
       localStorage.setItem(`queueEntry_${restaurantId}`, docRef.id);
-      
-      // Immediately set myEntry to trigger the UI transition
       setMyEntry({ id: docRef.id, ...newEntryData });
       setJoining(false);
     } catch (err) {
@@ -149,7 +145,14 @@ export default function CustomerView() {
 
   const myPosition = myEntry ? queue.findIndex(e => e.id === myEntry.id) + 1 : -1;
 
-  if (loading) return <div className="p-8 text-center">Loading...</div>;
+  if (loading) return (
+    <div className="max-w-md mx-auto min-h-screen bg-[#050505] flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+        <p className="text-white/60">Loading...</p>
+      </div>
+    </div>
+  );
 
   // Show preorder screen if in preorder mode
   if (showPreorder && myEntry && myEntry.status === 'waiting') {
@@ -219,7 +222,7 @@ export default function CustomerView() {
                   </div>
                   <div className="space-y-3">
                     <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest ml-1">Party Size</label>
-                    <div className="grid grid-cols-4 sm:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-4 gap-2">
                       {['1', '2', '3', '4', '5', '6', '6+'].map(size => (
                         <button
                           key={size}

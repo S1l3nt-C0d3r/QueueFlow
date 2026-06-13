@@ -5,8 +5,7 @@ import { db } from '../lib/firebase';
 
 export type UserRole = 'waiter' | 'receptionist' | 'admin' | 'global_admin' | null;
 
-interface UserProfile {
-  uid: string;
+export interface UserProfile {
   email: string;
   role: UserRole;
   restaurantId?: string;
@@ -31,7 +30,6 @@ export const useUserRole = (user: User | null) => {
         // Check if user is global admin
         if (user.email === 'incrediblegamer64@gmail.com' && user.emailVerified) {
           setProfile({
-            uid: user.uid,
             email: user.email,
             role: 'global_admin',
             displayName: user.displayName || 'Admin',
@@ -42,17 +40,23 @@ export const useUserRole = (user: User | null) => {
           return;
         }
 
-        // Fetch user profile from Firestore
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        // Fetch user profile from Firestore using email as key
+        if (!user.email) {
+          setError('User email not available');
+          setLoading(false);
+          return;
+        }
+
+        const userDoc = await getDoc(doc(db, 'users', user.email.toLocaleLowerCase()));
         
         if (userDoc.exists()) {
           const data = userDoc.data() as UserProfile;
           setProfile(data);
           setError(null);
         } else {
-          // User not found - needs onboarding
+          // User not found in system
           setProfile(null);
-          setError('User profile not found. Please complete onboarding.');
+          setError(`Account ${user.email} has not been authorized. Contact your admin.`);
         }
       } catch (err) {
         console.error('Error fetching user profile:', err);

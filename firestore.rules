@@ -7,12 +7,12 @@ service cloud.firestore {
       return request.auth != null;
     }
     
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    function isOwner(userEmail) {
+      return isAuthenticated() && request.auth.token.email == userEmail;
     }
     
     function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data;
     }
     
     function isGlobalAdmin() {
@@ -33,7 +33,7 @@ service cloud.firestore {
 
     // Restaurants
     match /restaurants/{restaurantId} {
-      allow read: if true; // Customers need to see restaurant info
+      allow read: if true;
       allow create, update, delete: if isGlobalAdmin();
       
       // Queue
@@ -53,28 +53,26 @@ service cloud.firestore {
         allow delete: if isAdmin(restaurantId) || isGlobalAdmin();
       }
 
-      // Menus - RESTRICTED: Only admin and global admin can write
+      // Menus
       match /menus/{menuItemId} {
         allow read: if true;
-        
         allow create, update: if isGlobalAdmin() || isAdmin(restaurantId);
         allow delete: if isGlobalAdmin() || isAdmin(restaurantId);
       }
 
-      // Orders (preorders)
+      // Orders
       match /orders/{orderId} {
         allow read: if isAuthenticated();
-        
         allow create, update: if isAuthenticated();
         allow delete: if isGlobalAdmin() || isAdmin(restaurantId);
       }
     }
 
-    // Users - RESTRICTED: Only own profile or global admin
-    match /users/{userId} {
-      allow read: if isOwner(userId) || isGlobalAdmin();
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'restaurantId', 'uid']);
+    // Users - Keyed by email, only global admin can create/update
+    match /users/{userEmail} {
+      allow read: if isOwner(userEmail) || isGlobalAdmin();
+      allow create: if isGlobalAdmin();
+      allow update: if isGlobalAdmin();
       allow delete: if isGlobalAdmin();
     }
   }

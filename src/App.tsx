@@ -3,11 +3,11 @@ import { useState, useEffect } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { useUserRole } from './hooks/useUserRole';
-import { ProtectedRoute } from './components/ProtectedRoute';
 import CustomerView from './components/CustomerView';
 import WaiterView from './components/WaiterView';
 import ReceptionistView from './components/ReceptionistView';
-import AdminView from './components/AdminView';
+import AdminView from './components/AdminView_Integrated';
+import RestaurantAdminView from './components/RestaurantAdminView';
 import Login from './components/Login';
 
 export default function App() {
@@ -23,10 +23,13 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  if (authLoading) {
+  if (authLoading || profileLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#050505]">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+          <p className="text-white/60">Loading...</p>
+        </div>
       </div>
     );
   }
@@ -42,77 +45,106 @@ export default function App() {
           {/* Login Route */}
           <Route path="/login" element={<Login />} />
           
-          {/* Protected Staff Routes */}
-          {/* Waiter Routes */}
-          <Route 
-            path="/waiter" 
-            element={
-              <ProtectedRoute 
-                userRole={profile?.role || null}
-                requiredRoles={['waiter', 'admin', 'global_admin']}
-                loading={profileLoading}
-              >
-                <WaiterView />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/waiter/:restaurantId" 
-            element={
-              <ProtectedRoute 
-                userRole={profile?.role || null}
-                requiredRoles={['waiter', 'admin', 'global_admin']}
-                loading={profileLoading}
-              >
-                <WaiterView />
-              </ProtectedRoute>
-            } 
-          />
-          
-          {/* Receptionist Routes */}
-          <Route 
-            path="/receptionist" 
-            element={
-              <ProtectedRoute 
-                userRole={profile?.role || null}
-                requiredRoles={['receptionist', 'admin', 'global_admin']}
-                loading={profileLoading}
-              >
-                <ReceptionistView />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/receptionist/:restaurantId" 
-            element={
-              <ProtectedRoute 
-                userRole={profile?.role || null}
-                requiredRoles={['receptionist', 'admin', 'global_admin']}
-                loading={profileLoading}
-              >
-                <ReceptionistView />
-              </ProtectedRoute>
-            } 
-          />
-          
-          {/* Admin Routes */}
-          <Route 
-            path="/admin" 
-            element={
-              <ProtectedRoute 
-                userRole={profile?.role || null}
-                requiredRoles={['admin', 'global_admin']}
-                loading={profileLoading}
-              >
-                <AdminView />
-              </ProtectedRoute>
-            } 
-          />
-          
-          {/* Catch-all */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {/* Protected Routes - Only for authenticated users with profiles */}
+          {user && profile ? (
+            <>
+              {/* Global Admin Routes - Access to all restaurants */}
+              {profile.role === 'global_admin' && (
+                <>
+                  <Route path="/admin" element={<AdminView user={user} displayName={profile.displayName} />} />
+                  <Route path="/admin/*" element={<AdminView user={user} displayName={profile.displayName} />} />
+                  
+                  {/* Global admin can view waiter/receptionist perspectives for any restaurant */}
+                  <Route path="/waiter/:restaurantId" element={<WaiterView />} />
+                  <Route path="/receptionist/:restaurantId" element={<ReceptionistView />} />
+                  
+                  {/* Catch-all for global admin */}
+                  <Route path="*" element={<Navigate to="/admin" replace />} />
+                </>
+              )}
+
+              {/* Restaurant Admin Routes - Access to their restaurant only */}
+              {profile.role === 'admin' && profile.restaurantId && (
+                <>
+                  <Route 
+                    path={`/restaurant/${profile.restaurantId}`}
+                    element={
+                      <RestaurantAdminView 
+                        user={user}
+                        restaurantId={profile.restaurantId}
+                        restaurantName={profile.restaurantName || 'My Restaurant'}
+                      />
+                    }
+                  />
+                  <Route 
+                    path="/restaurant/*" 
+                    element={<Navigate to={`/restaurant/${profile.restaurantId}`} replace />} 
+                  />
+                  {/* Redirect all other routes to their restaurant */}
+                  <Route path="*" element={<Navigate to={`/restaurant/${profile.restaurantId}`} replace />} />
+                </>
+              )}
+
+              {/* Waiter Routes */}
+              {profile.role === 'waiter' && profile.restaurantId && (
+                <>
+                  <Route path={`/waiter/${profile.restaurantId}`} element={<WaiterView />} />
+                  <Route path="/waiter" element={<Navigate to={`/waiter/${profile.restaurantId}`} replace />} />
+                  {/* Redirect all other routes to their waiter view */}
+                  <Route path="*" element={<Navigate to={`/waiter/${profile.restaurantId}`} replace />} />
+                </>
+              )}
+
+              {/* Receptionist Routes */}
+              {profile.role === 'receptionist' && profile.restaurantId && (
+                <>
+                  <Route path={`/receptionist/${profile.restaurantId}`} element={<ReceptionistView />} />
+                  <Route path="/receptionist" element={<Navigate to={`/receptionist/${profile.restaurantId}`} replace />} />
+                  {/* Redirect all other routes to their receptionist view */}
+                  <Route path="*" element={<Navigate to={`/receptionist/${profile.restaurantId}`} replace />} />
+                </>
+              )}
+            </>
+          ) : user ? (
+            // User authenticated but not authorized (profile not found)
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          ) : (
+            // Not authenticated - all routes go to login
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          )}
         </Routes>
       </div>
     </BrowserRouter>
   );
 }
+
+/**
+ * ROUTING LOGIC SUMMARY
+ * 
+ * Not Authenticated:
+ *   /login → Login component
+ *   /q/{restaurantId} → CustomerView (no auth needed)
+ *   /* → Redirect to /login
+ * 
+ * Global Admin (role: 'global_admin'):
+ *   /admin → AdminView (all restaurants)
+ *   /waiter/{restaurantId} → WaiterView (view as waiter for any restaurant)
+ *   /receptionist/{restaurantId} → ReceptionistView (view as receptionist for any restaurant)
+ *   /* → Redirect to /admin
+ * 
+ * Restaurant Admin (role: 'admin' + restaurantId):
+ *   /restaurant/{restaurantId} → RestaurantAdminView (their restaurant)
+ *   /* → Redirect to /restaurant/{restaurantId}
+ * 
+ * Waiter (role: 'waiter' + restaurantId):
+ *   /waiter/{restaurantId} → WaiterView
+ *   /* → Redirect to /waiter/{restaurantId}
+ * 
+ * Receptionist (role: 'receptionist' + restaurantId):
+ *   /receptionist/{restaurantId} → ReceptionistView
+ *   /* → Redirect to /receptionist/{restaurantId}
+ * 
+ * Customer (public, no auth):
+ *   / → CustomerView
+ *   /q/{restaurantId} → CustomerView
+ */
