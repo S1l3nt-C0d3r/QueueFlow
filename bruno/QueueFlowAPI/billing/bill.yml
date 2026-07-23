@@ -1,0 +1,24 @@
+info:
+  name: bill
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/billing/25ee97db-f5a3-4342-bcd7-6e149d9e9015/pay"
+  headers:
+    - name: Authorization
+      value: Bearer {{token}}
+  body:
+    type: json
+    data: |-
+      {
+        "paymentMethod": "upi"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

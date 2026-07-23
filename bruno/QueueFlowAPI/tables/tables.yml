@@ -1,0 +1,25 @@
+info:
+  name: tables
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/tables"
+  headers:
+    - name: Authorization
+      value: Bearer {{token}}
+  body:
+    type: json
+    data: |-
+      {
+        "tableNumber": "T1",
+        "capacity": 4
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

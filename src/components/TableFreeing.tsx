@@ -1,10 +1,23 @@
 import { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
-import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
-import { Table, TableLayout, findSuitableTable } from '../lib/tableUtils';
-import { autoNotifyNextParty } from '../lib/tableAssignmentService';
-import { TableX, LogOut, Users, Check, AlertCircle, Bell } from 'lucide-react';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { Table2, Users, Check, AlertCircle, Bell, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { motion, AnimatePresence } from 'motion/react';
+
+interface Table {
+  id: string;
+  tableNumber: number;
+  capacity: number;
+  occupied: boolean;
+  occupiedBy?: string;
+}
+
+interface TableLayout {
+  restaurantId: string;
+  tables: Table[];
+  updatedAt: string;
+}
 
 interface TableFreeingProps {
   restaurantId: string;
@@ -18,8 +31,7 @@ export default function TableFreeing({ restaurantId, queue, onTablesUpdated }: T
   const [freingTable, setFreeingTable] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [suitableQueue, setSuitableQueue] = useState<any[]>([]);
-  const [lastNotificationMessage, setLastNotificationMessage] = useState<string | null>(null);
-  const [showNotificationSuccess, setShowNotificationSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const loadTables = async () => {
@@ -34,84 +46,56 @@ export default function TableFreeing({ restaurantId, queue, onTablesUpdated }: T
             setLoading(false);
           }
         );
-
         return () => unsubscribe();
       } catch (err) {
         console.error('Error loading tables:', err);
         setLoading(false);
       }
     };
-
     loadTables();
   }, [restaurantId]);
 
-  // When a table is selected/freed, calculate if we can seat someone
   useEffect(() => {
     if (!selectedTableId) {
       setSuitableQueue([]);
       return;
     }
 
-    const freedTable = tables.find(t => t.id === selectedTableId);
-    if (!freedTable) return;
+    const selectedTable = tables.find(t => t.id === selectedTableId);
+    if (!selectedTable) return;
 
-    // Find all entries in waiting status
-    const waitingEntries = queue.filter(e => e.status === 'waiting').sort((a, b) => 
-      new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime()
-    );
+    const waitingEntries = queue
+      .filter(e => e.status === 'waiting')
+      .sort((a, b) => new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime())
+      .filter(entry => entry.partySize <= selectedTable.capacity)
+      .slice(0, 3);
 
-    // For each waiting entry, check if they can fit at this table
-    const suitable = waitingEntries
-      .filter(entry => {
-        const freeTablesCopy = tables.map(t => ({ ...t }));
-        const result = findSuitableTable(entry.partySize, freeTablesCopy);
-        
-        // Check if the freed table is in the suitable result
-        if (Array.isArray(result)) {
-          return result.some(t => t.id === selectedTableId);
-        } else if (result) {
-          return result.id === selectedTableId;
-        }
-        return false;
-      })
-      .slice(0, 3); // Show top 3 suitable entries
-
-    setSuitableQueue(suitable);
+    setSuitableQueue(waitingEntries);
   }, [selectedTableId, tables, queue]);
 
   const handleFreeTable = async (tableId: string) => {
     setFreeingTable(tableId);
     try {
-      const updatedTables = tables.map(t => 
-        t.id === tableId 
+      const updatedTables = tables.map(t =>
+        t.id === tableId
           ? { ...t, occupied: false, occupiedBy: undefined }
           : t
       );
 
-      const tableLayout: TableLayout = {
+      const tableLayoutData: TableLayout = {
         restaurantId,
         tables: updatedTables,
         updatedAt: new Date().toISOString()
       };
 
-      await updateDoc(doc(db, 'restaurants', restaurantId, 'settings', 'tableLayout'), tableLayout);
-      
-      // Try to notify next suitable party
-      const notificationResult = await autoNotifyNextParty(restaurantId, updatedTables);
-      
-      if (notificationResult.notified && notificationResult.party) {
-        setLastNotificationMessage(
-          `✓ Notified ${notificationResult.party.name} (${notificationResult.party.partySize} people) for table freeing`
-        );
-        setShowNotificationSuccess(true);
-        setTimeout(() => setShowNotificationSuccess(false), 4000);
-      } else if (!notificationResult.notified) {
-        setLastNotificationMessage('Table freed, but no suitable customers waiting yet');
-        setShowNotificationSuccess(true);
-        setTimeout(() => setShowNotificationSuccess(false), 3000);
-      }
-      
-      // Auto-select the freed table to show suitable customers
+      await setDoc(
+        doc(db, 'restaurants', restaurantId, 'settings', 'tableLayout'),
+        tableLayoutData,
+        { merge: true }
+      );
+
+      setSuccessMessage('Table freed successfully! ✓');
+      setTimeout(() => setSuccessMessage(null), 3000);
       setSelectedTableId(tableId);
       onTablesUpdated?.();
     } catch (err) {
@@ -121,106 +105,154 @@ export default function TableFreeing({ restaurantId, queue, onTablesUpdated }: T
     }
   };
 
-  if (loading) return <div className="text-center py-8 text-white/60">Loading tables...</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500"></div>
+      </div>
+    );
+  }
 
   const occupiedTables = tables.filter(t => t.occupied);
   const freeTables = tables.filter(t => !t.occupied);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div>
-        <h3 className="text-xl font-display font-bold text-white flex items-center gap-3 mb-2">
-          <TableX className="h-6 w-6 text-purple-400" />
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+        <h3 className="text-3xl font-display font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent flex items-center gap-3 mb-2">
+          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg shadow-purple-500/50">
+            <Table2 className="h-6 w-6 text-white" />
+          </div>
           Table Management
         </h3>
-        <p className="text-white/50 text-sm">Mark tables as free to seat waiting customers</p>
-      </div>
+        <p className="text-white/60 text-sm mt-1">Mark tables as free to seat waiting customers</p>
+      </motion.div>
+
+      {/* Messages */}
+      <AnimatePresence>
+        {successMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="p-4 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-500/30 rounded-xl text-blue-300 flex items-center gap-3"
+          >
+            <Bell className="h-5 w-5 flex-shrink-0" />
+            {successMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="p-4 bg-purple-500/10 rounded-xl border border-purple-500/20">
-          <p className="text-2xl font-display font-bold text-purple-400">{occupiedTables.length}</p>
-          <p className="text-xs text-purple-400/60 font-bold uppercase tracking-widest mt-1">Occupied</p>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="grid grid-cols-2 gap-6"
+      >
+        <div className="backdrop-blur-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 p-6 rounded-2xl shadow-lg">
+          <p className="text-white/60 text-sm font-bold uppercase mb-2">Occupied</p>
+          <p className="text-4xl font-display font-bold text-purple-300">{occupiedTables.length}</p>
         </div>
-        <div className="p-4 bg-green-500/10 rounded-xl border border-green-500/20">
-          <p className="text-2xl font-display font-bold text-green-400">{freeTables.length}</p>
-          <p className="text-xs text-green-400/60 font-bold uppercase tracking-widest mt-1">Available</p>
+        <div className="backdrop-blur-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 p-6 rounded-2xl shadow-lg">
+          <p className="text-white/60 text-sm font-bold uppercase mb-2">Available</p>
+          <p className="text-4xl font-display font-bold text-green-300">{freeTables.length}</p>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Notification Success Message */}
-      {showNotificationSuccess && lastNotificationMessage && (
-        <div className="p-4 bg-blue-500/10 rounded-xl border border-blue-500/30 flex items-center gap-3 animate-in fade-in duration-300">
-          <Bell className="h-5 w-5 text-blue-400 flex-shrink-0" />
-          <p className="text-blue-300 text-sm font-medium">{lastNotificationMessage}</p>
-        </div>
-      )}
-
-      {/* Tables Grid */}
-      <div>
-        <h4 className="font-bold text-white/80 mb-4 text-sm">Occupied Tables</h4>
+      {/* Occupied Tables */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+        <h4 className="font-bold text-white mb-4 text-sm uppercase tracking-widest">Occupied Tables - Tap to Free</h4>
         {occupiedTables.length === 0 ? (
-          <p className="text-white/40 text-sm py-8 text-center">All tables are free!</p>
+          <div className="backdrop-blur-xl bg-white/10 border border-white/20 p-12 rounded-2xl text-center">
+            <p className="text-white/50">All tables are free! ✓</p>
+          </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             {occupiedTables
               .sort((a, b) => a.tableNumber - b.tableNumber)
-              .map(table => (
-                <button
+              .map((table, idx) => (
+                <motion.button
                   key={table.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
                   onClick={() => handleFreeTable(table.id)}
                   disabled={freingTable === table.id}
+                  whileHover={{ y: -4 }}
+                  whileTap={{ scale: 0.95 }}
                   className={cn(
-                    "p-4 rounded-xl border-2 font-bold transition-all text-sm flex flex-col items-center gap-2",
+                    "p-6 rounded-2xl border-2 font-bold transition-all flex flex-col items-center gap-2 shadow-lg",
                     freingTable === table.id
-                      ? "bg-yellow-500/20 border-yellow-500/50 text-yellow-400"
+                      ? "bg-gradient-to-br from-yellow-500/20 to-orange-500/20 border-yellow-500/50 text-yellow-400"
                       : selectedTableId === table.id
-                      ? "bg-blue-500/20 border-blue-500 text-blue-400"
-                      : "bg-purple-500/10 border-purple-500/30 text-purple-400 hover:border-purple-500/60 hover:bg-purple-500/20"
+                      ? "bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border-blue-500/50 text-blue-400 shadow-blue-500/20"
+                      : "bg-gradient-to-br from-purple-500/20 to-pink-500/20 border-purple-500/30 text-purple-400 hover:border-purple-500/60 hover:bg-gradient-to-br hover:from-purple-500/30 hover:to-pink-500/30 hover:shadow-purple-500/30"
                   )}
                 >
-                  <span className="text-lg font-display">T{table.tableNumber}</span>
-                  <span className="text-[10px] opacity-80">{table.capacity} seats</span>
-                </button>
+                  <span className="text-3xl font-display">T{table.tableNumber}</span>
+                  <span className="text-xs opacity-80">{table.capacity} seats</span>
+                  {freingTable === table.id && (
+                    <Zap className="h-4 w-4 animate-pulse" />
+                  )}
+                </motion.button>
               ))}
           </div>
         )}
-      </div>
+      </motion.div>
 
       {/* Suitable Customers */}
-      {selectedTableId && suitableQueue.length > 0 && (
-        <div className="p-4 bg-green-500/5 rounded-xl border border-green-500/30">
-          <h4 className="font-bold text-green-400 mb-3 flex items-center gap-2">
-            <Check className="h-4 w-4" />
-            Ready to Seat
-          </h4>
-          <div className="space-y-2">
-            {suitableQueue.map((entry, idx) => (
-              <div key={entry.id} className="flex items-center justify-between text-sm">
-                <div>
-                  <span className="text-green-300 font-bold">#{idx + 1}</span>
-                  <span className="text-white/80 ml-2">{entry.customerName}</span>
-                  <span className="text-white/50 text-xs ml-2">({entry.partySize} people)</span>
-                </div>
-                <span className="text-green-400/70 text-xs font-bold">✓ Fits</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {selectedTableId && suitableQueue.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="backdrop-blur-xl bg-gradient-to-br from-green-500/10 to-emerald-500/10 border-2 border-green-500/30 p-6 rounded-2xl shadow-lg"
+          >
+            <h4 className="font-bold text-green-300 mb-4 flex items-center gap-2">
+              <Check className="h-5 w-5" />
+              Ready to Seat ({suitableQueue.length})
+            </h4>
+            <div className="space-y-3">
+              {suitableQueue.map((entry, idx) => (
+                <motion.div
+                  key={entry.id}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: idx * 0.1 }}
+                  className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-green-500/20"
+                >
+                  <div>
+                    <span className="text-green-400 font-bold">#{idx + 1}</span>
+                    <span className="text-white/80 ml-3 font-bold">{entry.customerName}</span>
+                    <span className="text-white/50 text-xs ml-2">({entry.partySize} people)</span>
+                  </div>
+                  <span className="text-green-400 text-xs font-bold px-2 py-1 bg-green-500/20 rounded">✓ Fits</span>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
 
-      {selectedTableId && suitableQueue.length === 0 && (
-        <div className="p-4 bg-yellow-500/5 rounded-xl border border-yellow-500/30">
-          <div className="flex items-center gap-2 text-yellow-400 text-sm font-bold">
-            <AlertCircle className="h-4 w-4" />
-            <span>No suitable customers for this table size</span>
-          </div>
-          <p className="text-yellow-400/60 text-xs mt-2">
-            Wait for more tables to free up or for customers with matching party sizes to join the queue
-          </p>
-        </div>
-      )}
+        {selectedTableId && suitableQueue.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="backdrop-blur-xl bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border-2 border-yellow-500/30 p-6 rounded-2xl shadow-lg"
+          >
+            <div className="flex items-center gap-3 text-yellow-300 mb-2">
+              <AlertCircle className="h-5 w-5 flex-shrink-0" />
+              <p className="font-bold">No suitable customers</p>
+            </div>
+            <p className="text-yellow-300/70 text-sm">
+              Wait for more tables to free up or for customers with matching party sizes to join the queue
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

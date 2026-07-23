@@ -1,42 +1,47 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { db, auth } from '../lib/firebase';
 import { collection, onSnapshot, query, doc, setDoc } from 'firebase/firestore';
 import { QRCodeSVG } from 'qrcode.react';
-import { Plus, Store, QrCode, Settings, Users, ArrowLeft, Grid3X3 } from 'lucide-react';
+import { Plus, Store, QrCode, Settings, Users, ArrowLeft, Grid3X3, Copy, CheckCircle2, Eye, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
+import { motion, AnimatePresence } from 'motion/react';
 import MenuManagement from './MenuManagement';
 import StaffManagement from './StaffManagement';
-import RestaurantLayout from './RestaurantLayout';
+import TableManagement from './TableManagement';
 import UserProfile from './UserProfile';
 import { User } from 'firebase/auth';
 
-type AdminTab = 'restaurants' | 'staff' | 'tables';
+type AdminTab = 'restaurants' | 'staff' | 'tables' | 'menu';
 
-interface AdminViewProps {
-  user?: User | null;
-  displayName?: string;
+interface Restaurant {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt?: string;
 }
 
-export default function AdminView({ user, displayName }: AdminViewProps) {
-  const [restaurants, setRestaurants] = useState<any[]>([]);
+export default function AdminView({ user, displayName }: { user?: User | null; displayName?: string }) {
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [loading, setLoading] = useState(true);
-  const [selectedRestaurant, setSelectedRestaurant] = useState<any>(null);
+  const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const [activeTab, setActiveTab] = useState<AdminTab>('restaurants');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showViewOptions, setShowViewOptions] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     const q = query(collection(db, 'restaurants'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setRestaurants(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setRestaurants(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Restaurant)));
       setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  const handleCreate = async (e: FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     const id = name.toLowerCase().replace(/\s+/g, '-');
     try {
@@ -52,279 +57,349 @@ export default function AdminView({ user, displayName }: AdminViewProps) {
     }
   };
 
-  if (loading) return <div className="p-8 text-center">Loading...</div>;
+  const copyToClipboard = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleViewDashboard = (restaurantId: string, view: 'waiter' | 'receptionist' | 'queue') => {
+    const routes: Record<string, string> = {
+      waiter: `/waiter/${restaurantId}`,
+      receptionist: `/receptionist/${restaurantId}`,
+      queue: `/q/${restaurantId}`
+    };
+    navigate(routes[view]);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-900 to-slate-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-indigo-500/30 pb-safe">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-900 to-slate-950 text-white font-sans">
       {/* Header */}
-      <nav className="glass border-b border-white/5 px-4 sm:px-8 py-4 sm:py-5 flex items-center justify-between sticky top-0 z-50 pt-safe">
+      <motion.nav
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="backdrop-blur-xl bg-white/5 border-b border-white/10 px-4 sm:px-8 py-4 sm:py-5 flex items-center justify-between sticky top-0 z-50 shadow-lg"
+      >
         <div className="flex items-center gap-3 sm:gap-4">
-          <div className="h-10 w-10 sm:h-12 sm:w-12 mesh-gradient-purple rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-purple-500/20">
-            <Settings className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg shadow-purple-500/50">
+            <Settings className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h1 className="text-lg sm:text-xl font-display font-bold text-white tracking-tight leading-tight">QueueFlow Admin</h1>
-            <p className="text-[9px] sm:text-[10px] text-white/40 font-black uppercase tracking-[0.2em]">System Management</p>
+            <h1 className="text-2xl font-display font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+              QueueFlow Admin
+            </h1>
+            <p className="text-xs text-white/50 uppercase tracking-widest">Global Management</p>
           </div>
         </div>
-
-        {/* Right side: User Profile */}
-        <UserProfile user={user || auth.currentUser} displayName={displayName} />
-      </nav>
+        <div className="flex items-center gap-4">
+          <UserProfile user={user || auth.currentUser} displayName={displayName} />
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            onClick={() => {
+              auth.signOut();
+              navigate('/');
+            }}
+            className="h-12 w-12 rounded-xl bg-gradient-to-br from-red-500/20 to-pink-500/20 border border-red-500/30 flex items-center justify-center text-red-400 hover:text-red-300 hover:bg-red-500/30 transition-all shadow-lg"
+          >
+            <LogOut className="h-6 w-6" />
+          </motion.button>
+        </div>
+      </motion.nav>
 
       {/* Tabs Navigation */}
-      <div className="border-b border-white/10 bg-white/[0.02]">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.1 }}
+        className="backdrop-blur-sm bg-white/5 border-b border-white/10"
+      >
         <div className="px-4 sm:px-8 max-w-7xl mx-auto w-full">
-          <div className="flex gap-8 overflow-x-auto">
-            <button
-              onClick={() => {
-                setActiveTab('restaurants');
-                setSelectedRestaurant(null);
-              }}
-              className={cn(
-                "px-4 py-4 font-medium border-b-2 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap",
-                activeTab === 'restaurants'
-                  ? 'border-indigo-500 text-indigo-400'
-                  : 'border-transparent text-white/60 hover:text-white'
-              )}
-            >
-              <Store className="h-5 w-5" />
-              Restaurants
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('tables');
-                setSelectedRestaurant(null);
-              }}
-              className={cn(
-                "px-4 py-4 font-medium border-b-2 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap",
-                activeTab === 'tables'
-                  ? 'border-indigo-500 text-indigo-400'
-                  : 'border-transparent text-white/60 hover:text-white'
-              )}
-            >
-              <Grid3X3 className="h-5 w-5" />
-              Tables
-            </button>
-            <button
-              onClick={() => setActiveTab('staff')}
-              className={cn(
-                "px-4 py-4 font-medium border-b-2 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap",
-                activeTab === 'staff'
-                  ? 'border-indigo-500 text-indigo-400'
-                  : 'border-transparent text-white/60 hover:text-white'
-              )}
-            >
-              <Users className="h-5 w-5" />
-              Staff Management
-            </button>
+          <div className="flex gap-4 overflow-x-auto">
+            {[
+              { key: 'restaurants', label: 'Restaurants', icon: Store, color: 'from-blue-500 to-cyan-600' },
+              { key: 'tables', label: 'Tables', icon: Grid3X3, color: 'from-purple-500 to-pink-600' },
+              { key: 'staff', label: 'Staff', icon: Users, color: 'from-green-500 to-emerald-600' }
+            ].map(({ key, label, icon: Icon, color }) => (
+              <motion.button
+                key={key}
+                onClick={() => {
+                  setActiveTab(key as AdminTab);
+                  setSelectedRestaurant(null);
+                }}
+                whileHover={{ scale: 1.02 }}
+                className={cn(
+                  "px-6 py-4 font-bold border-b-2 transition-all flex items-center gap-2 text-sm whitespace-nowrap",
+                  activeTab === key
+                    ? `border-b-4 bg-gradient-to-r ${color} text-white rounded-t-lg shadow-lg`
+                    : 'border-transparent text-white/60 hover:text-white'
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                {label}
+              </motion.button>
+            ))}
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Main Content */}
       <main className="p-4 sm:p-8 max-w-7xl mx-auto w-full">
-        {/* Staff Management Tab */}
-        {activeTab === 'staff' && (
-          <div className="animate-in fade-in">
-            <StaffManagement />
-          </div>
-        )}
+        <AnimatePresence mode="wait">
+          {/* Staff Management Tab */}
+          {activeTab === 'staff' && selectedRestaurant && (
+            <motion.div
+              key="staff-detail"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <motion.button
+                whileHover={{ scale: 1.05, x: -4 }}
+                onClick={() => setSelectedRestaurant(null)}
+                className="mb-8 h-12 w-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 hover:text-purple-300 transition-all shadow-lg"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </motion.button>
+              <StaffManagement restaurantId={selectedRestaurant.id} />
+            </motion.div>
+          )}
 
-        {/* Tables Tab */}
-        {activeTab === 'tables' && (
-          <div className="animate-in fade-in">
-            {selectedRestaurant ? (
-              <div>
-                <button
-                  onClick={() => setSelectedRestaurant(null)}
-                  className="mb-8 h-10 w-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-all"
-                >
-                  <ArrowLeft className="h-5 w-5" />
-                </button>
-                <RestaurantLayout restaurantId={selectedRestaurant.id} />
+          {/* Restaurant Picker for Staff Tab */}
+          {activeTab === 'staff' && !selectedRestaurant && (
+            <motion.div
+              key="staff-picker"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
+            >
+              <h2 className="text-3xl font-display font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
+                Select Restaurant
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {restaurants.map((rest, idx) => (
+                  <motion.button
+                    key={rest.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    whileHover={{ y: -8, scale: 1.02 }}
+                    onClick={() => setSelectedRestaurant(rest)}
+                    className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border-2 border-white/20 hover:border-green-500/30 p-6 rounded-2xl text-left transition-all shadow-lg hover:shadow-green-500/20"
+                  >
+                    <h3 className="text-xl font-bold text-white mb-2">{rest.name}</h3>
+                    <p className="text-white/60 text-sm">Manage staff</p>
+                  </motion.button>
+                ))}
               </div>
-            ) : (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-2xl font-display font-bold text-white">Select Restaurant to Manage Tables</h2>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            </motion.div>
+          )}
+
+          {/* Restaurants Tab */}
+          {activeTab === 'restaurants' && (
+            <motion.div
+              key="restaurants"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-8"
+            >
+              {/* Create Restaurant Form */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="backdrop-blur-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/30 p-8 rounded-2xl shadow-2xl"
+              >
+                <h2 className="text-2xl font-bold text-white mb-6">Create Restaurant</h2>
+                <form onSubmit={handleCreate} className="space-y-4">
+                  <div>
+                    <label className="text-sm font-bold text-white/80 block mb-2">Restaurant Name</label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="e.g., Blue Springs"
+                      className="w-full px-4 py-3 bg-white/5 border border-white/20 focus:border-blue-500/50 rounded-xl text-white placeholder:text-white/30 outline-none transition-all backdrop-blur-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-bold text-white/80 block mb-2">Description</label>
+                    <textarea
+                      value={desc}
+                      onChange={(e) => setDesc(e.target.value)}
+                      placeholder="Restaurant description..."
+                      className="w-full px-4 py-3 bg-white/5 border border-white/20 focus:border-blue-500/50 rounded-xl text-white placeholder:text-white/30 outline-none transition-all backdrop-blur-sm resize-none"
+                      rows={3}
+                    />
+                  </div>
+                  <motion.button
+                    type="submit"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full py-3 bg-gradient-to-r from-blue-500 to-cyan-600 text-white rounded-xl font-bold hover:shadow-lg hover:shadow-cyan-500/50 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Plus className="h-5 w-5" />
+                    Create Restaurant
+                  </motion.button>
+                </form>
+              </motion.div>
+
+              {/* Restaurants Grid */}
+              <div className="space-y-4">
+                <h3 className="text-xl font-bold text-white">Existing Restaurants</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {restaurants.map((rest, idx) => (
-                    <button
+                    <motion.div
                       key={rest.id}
-                      onClick={() => setSelectedRestaurant(rest)}
-                      className="glass-morphism p-6 sm:p-8 rounded-3xl sm:rounded-4xl text-left relative overflow-hidden group hover:border-indigo-500/50 transition-all"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.1 }}
+                      whileHover={{ y: -4 }}
+                      className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border-2 border-white/20 hover:border-purple-500/30 p-6 rounded-2xl shadow-lg hover:shadow-purple-500/20 transition-all"
                     >
-                      <div className={cn(
-                        "absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity duration-500",
-                        idx % 3 === 0 ? "mesh-gradient-purple" : idx % 3 === 1 ? "mesh-gradient-blue" : "mesh-gradient-green"
-                      )} />
-                      <div className="relative z-10">
-                        <h3 className="text-xl sm:text-2xl font-display font-bold text-white">{rest.name}</h3>
-                        <p className="text-white/50 text-sm mt-2">{rest.description}</p>
-                        <p className="text-indigo-400 text-sm font-bold mt-4 flex items-center gap-2">
-                          <Grid3X3 className="h-4 w-4" />
-                          Manage Tables
-                        </p>
+                      <h3 className="text-xl font-bold text-white mb-2">{rest.name}</h3>
+                      <p className="text-white/60 text-sm mb-4">{rest.description}</p>
+                      <div className="space-y-3">
+                        {/* Restaurant ID */}
+                        <div className="p-3 bg-white/5 rounded-lg">
+                          <p className="text-xs text-white/60 mb-2">Restaurant ID</p>
+                          <div className="flex items-center gap-2">
+                            <code className="text-sm text-purple-300 font-mono flex-1 truncate">{rest.id}</code>
+                            <motion.button
+                              whileHover={{ scale: 1.1 }}
+                              onClick={() => copyToClipboard(rest.id)}
+                              className="p-2 hover:bg-white/10 rounded transition-all"
+                            >
+                              {copiedId === rest.id ? (
+                                <CheckCircle2 className="h-4 w-4 text-green-400" />
+                              ) : (
+                                <Copy className="h-4 w-4 text-white/60" />
+                              )}
+                            </motion.button>
+                          </div>
+                        </div>
+
+                        {/* View Options */}
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          onClick={() => setShowViewOptions(showViewOptions === rest.id ? null : rest.id)}
+                          className="w-full py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-500/30 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-all flex items-center justify-center gap-2 font-bold text-sm"
+                        >
+                          <Eye className="h-4 w-4" />
+                          View Dashboards
+                        </motion.button>
+
+                        {/* View Options Dropdown */}
+                        <AnimatePresence>
+                          {showViewOptions === rest.id && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              className="space-y-2 pt-2 border-t border-white/10"
+                            >
+                              <motion.button
+                                whileHover={{ scale: 1.02 }}
+                                onClick={() => handleViewDashboard(rest.id, 'waiter')}
+                                className="w-full py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-all font-bold text-xs"
+                              >
+                                👨‍💼 Waiter View
+                              </motion.button>
+                              <motion.button
+                                whileHover={{ scale: 1.02 }}
+                                onClick={() => handleViewDashboard(rest.id, 'receptionist')}
+                                className="w-full py-2 bg-gradient-to-r from-orange-500/20 to-pink-500/20 border border-orange-500/30 text-orange-400 rounded-lg hover:bg-orange-500/30 transition-all font-bold text-xs"
+                              >
+                                📞 Receptionist View
+                              </motion.button>
+                              <motion.button
+                                whileHover={{ scale: 1.02 }}
+                                onClick={() => handleViewDashboard(rest.id, 'queue')}
+                                className="w-full py-2 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 text-green-400 rounded-lg hover:bg-green-500/30 transition-all font-bold text-xs"
+                              >
+                                👥 Queue View
+                              </motion.button>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+
+                        {/* QR Code */}
+                        <QRCodeSVG
+                          value={`${window.location.origin}/q/${rest.id}`}
+                          size={128}
+                          bgColor="#ffffff"
+                          fgColor="#000000"
+                          level="H"
+                          includeMargin={true}
+                          className="w-full rounded-lg border border-white/20"
+                        />
                       </div>
-                    </button>
+                    </motion.div>
                   ))}
                 </div>
               </div>
-            )}
-          </div>
-        )}
+            </motion.div>
+          )}
 
-        {/* Restaurants Tab */}
-        {activeTab === 'restaurants' && (
-          <>
-            {selectedRestaurant ? (
-              // Menu Management View
-              <div>
-                <div className="flex items-center gap-4 mb-8">
-                  <button
-                    onClick={() => setSelectedRestaurant(null)}
-                    className="h-10 w-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-all"
+          {/* Tables Tab - With TableManagement Component */}
+          {activeTab === 'tables' && selectedRestaurant && (
+            <motion.div
+              key="tables"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <motion.button
+                whileHover={{ scale: 1.05, x: -4 }}
+                onClick={() => setSelectedRestaurant(null)}
+                className="mb-8 h-12 w-12 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 hover:text-cyan-300 transition-all shadow-lg"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </motion.button>
+              <TableManagement restaurantId={selectedRestaurant.id} />
+            </motion.div>
+          )}
+
+          {/* Restaurant Picker for Tables Tab */}
+          {activeTab === 'tables' && !selectedRestaurant && (
+            <motion.div
+              key="tables-picker"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
+            >
+              <h2 className="text-3xl font-display font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+                Select Restaurant
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {restaurants.map((rest, idx) => (
+                  <motion.button
+                    key={rest.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    whileHover={{ y: -8, scale: 1.02 }}
+                    onClick={() => setSelectedRestaurant(rest)}
+                    className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border-2 border-white/20 hover:border-cyan-500/30 p-6 rounded-2xl text-left transition-all shadow-lg hover:shadow-cyan-500/20"
                   >
-                    <ArrowLeft className="h-5 w-5" />
-                  </button>
-                  <div>
-                    <h2 className="text-2xl font-display font-bold text-white">{selectedRestaurant.name}</h2>
-                    <p className="text-white/50 text-sm mt-1">Menu Management</p>
-                  </div>
-                </div>
-                
-                <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.01] border border-white/10 rounded-4xl p-8">
-                  <MenuManagement restaurantId={selectedRestaurant.id} />
-                </div>
+                    <h3 className="text-xl font-bold text-white mb-2">{rest.name}</h3>
+                    <p className="text-white/60 text-sm">Manage tables, orders & QR codes</p>
+                  </motion.button>
+                ))}
               </div>
-            ) : (
-              // Restaurants Grid
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
-                {/* Create Restaurant Form */}
-                <div className="lg:col-span-4">
-                  <div className="glass-morphism p-6 sm:p-8 rounded-3xl sm:rounded-4xl relative overflow-hidden sticky top-24">
-                    <div className="absolute inset-0 mesh-gradient-purple opacity-10" />
-                    <div className="relative z-10">
-                      <h2 className="text-xl sm:text-2xl font-display font-bold text-white mb-6 sm:mb-8 flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-2xl bg-purple-500/20 flex items-center justify-center">
-                          <Plus className="h-5 w-5 text-purple-400" />
-                        </div>
-                        Add Restaurant
-                      </h2>
-                      <form onSubmit={handleCreate} className="space-y-6">
-                        <div className="space-y-2">
-                          <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest ml-1">Name</label>
-                          <input
-                            required
-                            type="text"
-                            value={name}
-                            onChange={e => setName(e.target.value)}
-                            className="w-full px-5 py-4 rounded-2xl bg-white/5 border border-white/10 focus:border-purple-500/50 focus:ring-4 focus:ring-purple-500/10 outline-none transition-all text-white placeholder:text-white/20 text-base"
-                            placeholder="The Burger Joint"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="block text-[10px] font-bold text-white/40 uppercase tracking-widest ml-1">Description</label>
-                          <textarea
-                            value={desc}
-                            onChange={e => setDesc(e.target.value)}
-                            className="w-full px-5 py-4 rounded-2xl bg-white/5 border border-white/10 focus:border-purple-500/50 focus:ring-4 focus:ring-purple-500/10 outline-none transition-all text-white placeholder:text-white/20 min-h-[100px] sm:min-h-[120px] resize-none text-base"
-                            placeholder="Best burgers in town"
-                          />
-                        </div>
-                        <button
-                          type="submit"
-                          className="w-full py-5 bg-purple-500 text-white font-bold rounded-2xl shadow-xl shadow-purple-500/20 hover:bg-purple-600 active:scale-[0.98] transition-all text-lg"
-                        >
-                          Create Restaurant
-                        </button>
-                      </form>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Restaurant List */}
-                <div className="lg:col-span-8 space-y-6 sm:space-y-8">
-                  <div className="flex items-center justify-between px-2">
-                    <h2 className="text-xl sm:text-2xl font-display font-bold text-white tracking-tight">Active Restaurants</h2>
-                    <span className="px-2.5 py-1 bg-white/5 border border-white/10 rounded-full text-[9px] sm:text-[10px] font-black text-white/40 uppercase tracking-widest">
-                      {restaurants.length} Total
-                    </span>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                    {restaurants.map((rest, idx) => (
-                      <div key={rest.id} className="glass-morphism p-6 sm:p-8 rounded-3xl sm:rounded-4xl flex flex-col items-center text-center relative overflow-hidden group">
-                        <div className={cn(
-                          "absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity duration-500",
-                          idx % 3 === 0 ? "mesh-gradient-purple" : idx % 3 === 1 ? "mesh-gradient-blue" : "mesh-gradient-green"
-                        )} />
-                        
-                        <div className="relative z-10 w-full flex flex-col items-center">
-                          <div className="bg-white p-3 sm:p-4 rounded-2xl sm:rounded-3xl mb-4 sm:mb-6 shadow-2xl">
-                            <QRCodeSVG 
-                              value={`${window.location.origin}/q/${rest.id}`}
-                              size={120}
-                              level="H"
-                              includeMargin={true}
-                            />
-                          </div>
-                          <h3 className="text-xl sm:text-2xl font-display font-bold text-white tracking-tight mb-1 sm:mb-2">{rest.name}</h3>
-                          <p className="text-xs sm:text-sm text-white/50 mb-6 sm:mb-8 font-medium line-clamp-2 min-h-[32px] sm:min-h-[40px]">{rest.description}</p>
-                          
-                          <div className="w-full space-y-2 sm:space-y-3">
-                            <div className="flex gap-2">
-                              <button 
-                                onClick={() => navigate(`/waiter/${rest.id}`)}
-                                className="flex-1 py-3 bg-white/5 text-white/80 text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-white/10 border border-white/5 transition-all"
-                              >
-                                Waiter
-                              </button>
-                              <button 
-                                onClick={() => navigate(`/receptionist/${rest.id}`)}
-                                className="flex-1 py-3 bg-white/5 text-white/80 text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-white/10 border border-white/5 transition-all"
-                              >
-                                Reception
-                              </button>
-                            </div>
-                            <div className="flex gap-2">
-                              <button 
-                                onClick={() => navigate(`/q/${rest.id}`)}
-                                className="flex-1 py-3 bg-white/5 text-white/80 text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-white/10 border border-white/5 transition-all flex items-center justify-center gap-2"
-                              >
-                                <Store className="h-3 w-3" />
-                                App
-                              </button>
-                              <button 
-                                className="flex-1 py-3 bg-indigo-500 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-indigo-600 shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2"
-                                onClick={() => {
-                                  const url = `${window.location.origin}/q/${rest.id}`;
-                                  navigator.clipboard.writeText(url);
-                                  alert('URL copied to clipboard!');
-                                }}
-                              >
-                                <QrCode className="h-3 w-3" />
-                                Link
-                              </button>
-                            </div>
-                            <button
-                              onClick={() => setSelectedRestaurant(rest)}
-                              className="w-full py-3 bg-green-500 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-green-600 shadow-lg shadow-green-500/20 transition-all"
-                            >
-                              Menu
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );

@@ -1,317 +1,433 @@
-import { useState, useEffect } from 'react';
-import { doc, setDoc, getDocs, collection, deleteDoc, query, where } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { Plus, Trash2, Users, AlertCircle, CheckCircle } from 'lucide-react';
+import { useState, useEffect, FormEvent } from 'react';
+import { db, auth } from '../lib/firebase';
+import { collection, onSnapshot, query, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { Plus, Trash2, Users, AlertCircle, CheckCircle2, Save, X } from 'lucide-react';
+import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface StaffMember {
-  email: string;
-  role: 'waiter' | 'receptionist' | 'admin';
-  restaurantId: string;
-  displayName?: string;
+  staffNumber: string;
+  displayName: string;
+  email?: string;
+  role: 'admin' | 'waiter' | 'receptionist';
+  status: 'active' | 'inactive';
+  password: string;
   createdAt: string;
 }
 
-interface StaffInput {
-  email: string;
-  role: 'waiter' | 'receptionist' | 'admin';
+interface Props {
   restaurantId: string;
-  displayName: string;
 }
 
-export default function StaffManagement() {
+// Helper function to get Firebase ID token
+async function getAuthToken(): Promise<string> {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+  const token = await user.getIdToken(true); // Force refresh
+  return token;
+}
+
+export default function StaffManagement({ restaurantId }: Props) {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [formData, setFormData] = useState<StaffInput>({
-    email: '',
-    role: 'waiter',
-    restaurantId: '',
-    displayName: ''
-  });
 
-  // Fetch all staff members
+  // Form fields
+  const [staffNumber, setStaffNumber] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'waiter' | 'admin' | 'receptionist'>('waiter');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  // Load staff - NOW FROM /restaurants/{restaurantId}/staff
   useEffect(() => {
-    const fetchStaff = async () => {
-      try {
-        setLoading(true);
-        const staffCollection = collection(db, 'users');
-        const snapshot = await getDocs(staffCollection);
-        const staffList: StaffMember[] = [];
-        
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          // Skip global admin entries
-          if (data.role !== 'global_admin') {
-            staffList.push({
-              email: doc.id,
-              role: data.role,
-              restaurantId: data.restaurantId,
-              displayName: data.displayName,
-              createdAt: data.createdAt
-            });
-          }
-        });
-        
-        setStaff(staffList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-        setError(null);
-      } catch (err: any) {
-        setError('Failed to load staff members');
-        console.error('Error fetching staff:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    const q = query(collection(db, 'restaurants', restaurantId, 'staff'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const staffList = snapshot.docs.map(doc => ({
+        staffNumber: doc.id,
+        ...doc.data()
+      })) as StaffMember[];
+      setStaff(staffList.sort((a, b) => a.staffNumber.localeCompare(b.staffNumber)));
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [restaurantId]);
 
-    fetchStaff();
-  }, []);
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  const handleAddStaff = async (e: React.FormEvent) => {
+  const handleAddStaff = async (e: FormEvent) => {
     e.preventDefault();
-    
-    // Validation
-    if (!formData.email || !formData.restaurantId) {
-      setError('Please fill in all required fields');
-      return;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError('Please enter a valid email address');
-      return;
-    }
-
-    setSubmitting(true);
     setError(null);
-    setSuccess(null);
 
-    try {
-      const newStaff: StaffMember = {
-        email: formData.email.toLowerCase(),
-        role: formData.role,
-        restaurantId: formData.restaurantId,
-        displayName: formData.displayName || formData.email.split('@')[0],
-        createdAt: new Date().toISOString()
-      };
-
-      // Create the user document with email as the key
-      await setDoc(doc(db, 'users', newStaff.email), {
-        email: newStaff.email,
-        role: newStaff.role,
-        restaurantId: newStaff.restaurantId,
-        displayName: newStaff.displayName,
-        createdAt: newStaff.createdAt
-      });
-
-      // Update local state
-      setStaff(prev => [newStaff, ...prev]);
-
-      // Reset form
-      setFormData({
-        email: '',
-        role: 'waiter',
-        restaurantId: '',
-        displayName: ''
-      });
-
-      setSuccess(`Added ${newStaff.email} as ${newStaff.role}`);
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to add staff member');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDeleteStaff = async (email: string) => {
-    if (!window.confirm(`Remove ${email} from the system?`)) {
+    // Validation
+    if (!staffNumber || !displayName || !password || !confirmPassword) {
+      setError('All fields are required');
       return;
     }
 
-    try {
-      await deleteDoc(doc(db, 'users', email));
-      setStaff(prev => prev.filter(s => s.email !== email));
-      setSuccess(`Removed ${email}`);
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    // Check if staff number already exists
+    if (staff.some(s => s.staffNumber === staffNumber)) {
+      setError('Staff number already exists');
+      return;
+    }
+
+    setCreating(true);
+
+    try {      
+      const addStaff=async () => {
+        setDoc(doc(db, 'restaurants', restaurantId, 'staff', staffNumber), {
+          staffNumber,
+          displayName,
+          email: email || null,
+          role,
+          password,
+          status: "active",
+          createdAt: new Date().toISOString(),
+        });
+      };
+      await addStaff();
+
+      // Cloud Function creates in Firestore, no need to create again
+      setSuccess(`Staff member #${staffNumber} created successfully! ✓`);
+      
+      // Reset form
+      setStaffNumber('');
+      setDisplayName('');
+      setEmail('');
+      setRole('waiter');
+      setPassword('');
+      setConfirmPassword('');
+      setShowForm(false);
+
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError('Failed to remove staff member');
-      console.error('Error deleting staff:', err);
+      console.error('Error creating staff:', err);
+      setError(err.message || 'Failed to create staff member');
+    } finally {
+      setCreating(false);
     }
   };
+
+  const handleDeleteStaff = async (staffNum: string) => {
+    if (!window.confirm(`Delete staff member #${staffNum}?`)) return;
+
+    try {
+      // Get Firebase ID token
+      const token = await getAuthToken();
+
+      // Call Cloud Function to delete staff
+      const functionUrl = `https://us-central1-gen-lang-client-0928440940.cloudfunctions.net/deleteStaff`;
+      
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          restaurantId,
+          staffNumber: staffNum
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete staff');
+      }
+
+      // Cloud Function deleted from Firestore, component will update via snapshot
+      setSuccess('Staff member deleted ✓');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('Error deleting staff:', err);
+      setError(err.message || 'Failed to delete staff member');
+    }
+  };
+
+  const handleUpdateStaffRole = async (staffNum: string, newRole: string) => {
+    try {
+      // NOW USING /restaurants/{restaurantId}/staff/{staffNum}
+      const staffRef = doc(db, 'restaurants', restaurantId, 'staff', staffNum);
+      await updateDoc(staffRef, { role: newRole });
+      setSuccess('Staff role updated ✓');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      console.error('Error updating staff role:', err);
+      setError('Failed to update staff role');
+    }
+  };
+
+  const getRoleColor = (role: string) => {
+    const colors: Record<string, string> = {
+      admin: 'from-purple-500 to-pink-600',
+      waiter: 'from-blue-500 to-cyan-600',
+      receptionist: 'from-orange-500 to-pink-600'
+    };
+    return colors[role] || colors.waiter;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-green-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
-      {/* Add Staff Form */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white/5 border border-white/10 rounded-2xl p-6 sm:p-8"
-      >
-        <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-          <Plus className="h-5 w-5 text-indigo-400" />
-          Add New Staff Member
-        </h3>
-
-        <form onSubmit={handleAddStaff} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-white/60 uppercase tracking-wider mb-2">
-                Email Address *
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleInputChange}
-                placeholder="staff@example.com"
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/10 outline-none transition-all text-white placeholder:text-white/30"
-                disabled={submitting}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-white/60 uppercase tracking-wider mb-2">
-                Display Name
-              </label>
-              <input
-                type="text"
-                name="displayName"
-                value={formData.displayName}
-                onChange={handleInputChange}
-                placeholder="John Doe"
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/10 outline-none transition-all text-white placeholder:text-white/30"
-                disabled={submitting}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-white/60 uppercase tracking-wider mb-2">
-                Role *
-              </label>
-              <select
-                name="role"
-                value={formData.role}
-                onChange={handleInputChange}
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/10 outline-none transition-all text-white"
-                disabled={submitting}
-              >
-                <option value="waiter" className="bg-[#050505]">Waiter</option>
-                <option value="receptionist" className="bg-[#050505]">Receptionist</option>
-                <option value="admin" className="bg-[#050505]">Admin</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-white/60 uppercase tracking-wider mb-2">
-                Restaurant ID *
-              </label>
-              <input
-                type="text"
-                name="restaurantId"
-                value={formData.restaurantId}
-                onChange={handleInputChange}
-                placeholder="restaurant-id"
-                className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/10 outline-none transition-all text-white placeholder:text-white/30"
-                disabled={submitting}
-              />
-            </div>
-          </div>
-
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="p-4 bg-red-500/10 text-red-400 rounded-xl text-sm border border-red-500/20 flex items-start gap-3"
-            >
-              <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </motion.div>
-          )}
-
-          {success && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="p-4 bg-green-500/10 text-green-400 rounded-xl text-sm border border-green-500/20 flex items-start gap-3"
-            >
-              <CheckCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
-              <span>{success}</span>
-            </motion.div>
-          )}
-
-          <button
-            type="submit"
-            disabled={submitting || !formData.email || !formData.restaurantId}
-            className="w-full py-3 px-4 bg-indigo-500 text-white font-bold rounded-xl hover:bg-indigo-600 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
+      {/* Messages */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 bg-gradient-to-r from-red-500/20 to-pink-500/20 border border-red-500/30 rounded-xl text-red-300 flex items-center gap-3"
           >
-            {submitting ? 'Adding...' : 'Add Staff Member'}
-          </button>
-        </form>
+            <AlertCircle className="h-5 w-5" />
+            {error}
+          </motion.div>
+        )}
+        {success && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-xl text-green-300 flex items-center gap-3"
+          >
+            <CheckCircle2 className="h-5 w-5" />
+            {success}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Header & Add Button */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center justify-between"
+      >
+        <div>
+          <h2 className="text-2xl font-bold text-white">Staff Members</h2>
+          <p className="text-white/60 text-sm">Manage your restaurant staff</p>
+        </div>
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setShowForm(!showForm)}
+          className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-bold hover:shadow-lg hover:shadow-green-500/50 transition-all flex items-center gap-2"
+        >
+          <Plus className="h-4 w-4" />
+          Add Staff
+        </motion.button>
       </motion.div>
 
+      {/* Add Form */}
+      <AnimatePresence>
+        {showForm && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="backdrop-blur-xl bg-gradient-to-br from-green-500/10 to-emerald-500/10 border border-green-500/30 p-8 rounded-2xl shadow-2xl"
+          >
+            <h3 className="text-xl font-bold text-white mb-6">Create New Staff Member</h3>
+            <form onSubmit={handleAddStaff} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-bold text-white/80 block mb-2">Staff Number</label>
+                  <input
+                    type="text"
+                    value={staffNumber}
+                    onChange={(e) => setStaffNumber(e.target.value)}
+                    placeholder="1001"
+                    className="w-full px-4 py-2.5 bg-white/5 border border-white/20 focus:border-green-500/50 rounded-lg text-white placeholder:text-white/30 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-white/80 block mb-2">Display Name</label>
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="John Doe"
+                    className="w-full px-4 py-2.5 bg-white/5 border border-white/20 focus:border-green-500/50 rounded-lg text-white placeholder:text-white/30 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-bold text-white/80 block mb-2">Email (Optional)</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="john@example.com"
+                    className="w-full px-4 py-2.5 bg-white/5 border border-white/20 focus:border-green-500/50 rounded-lg text-white placeholder:text-white/30 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-white/80 block mb-2">Role</label>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value as any)}
+                    className="w-full px-4 py-2.5 bg-white/5 border border-white/20 focus:border-green-500/50 rounded-lg text-white outline-none"
+                  >
+                    <option value="waiter">Waiter</option>
+                    <option value="receptionist">Receptionist</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-bold text-white/80 block mb-2">Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-2.5 bg-white/5 border border-white/20 focus:border-green-500/50 rounded-lg text-white placeholder:text-white/30 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-white/80 block mb-2">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-2.5 bg-white/5 border border-white/20 focus:border-green-500/50 rounded-lg text-white placeholder:text-white/30 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <motion.button
+                  type="submit"
+                  whileHover={{ scale: 1.02 }}
+                  disabled={creating}
+                  className="flex-1 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-bold hover:shadow-lg hover:shadow-green-500/50 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {creating ? (
+                    <>
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-5 w-5" />
+                      Create Staff
+                    </>
+                  )}
+                </motion.button>
+                <motion.button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="flex-1 py-3 bg-white/5 border border-white/10 text-white rounded-lg font-bold hover:bg-white/10"
+                >
+                  Cancel
+                </motion.button>
+              </div>
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Staff List */}
+      <div className="space-y-4">
+        {staff.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="backdrop-blur-xl bg-white/10 border border-white/20 p-12 rounded-2xl text-center"
+          >
+            <Users className="h-12 w-12 text-white/20 mx-auto mb-3" />
+            <p className="text-white/50">No staff members yet. Add your first staff member!</p>
+          </motion.div>
+        ) : (
+          staff.map((member, idx) => (
+            <motion.div
+              key={member.staffNumber}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.05 }}
+              className="backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border-2 border-white/20 p-6 rounded-2xl shadow-lg hover:border-purple-500/30 transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4 flex-1">
+                  <div className={cn(
+                    'h-14 w-14 rounded-lg flex items-center justify-center text-white font-display font-bold shadow-lg',
+                    `bg-gradient-to-br ${getRoleColor(member.role)}`
+                  )}>
+                    #{member.staffNumber}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-white font-bold text-lg">{member.displayName}</p>
+                    <p className="text-white/60 text-sm">Staff #{member.staffNumber}</p>
+                    {member.email && (
+                      <p className="text-white/50 text-xs">{member.email}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <select
+                    value={member.role}
+                    onChange={(e) => handleUpdateStaffRole(member.staffNumber, e.target.value)}
+                    className={cn(
+                      'px-4 py-2 rounded-lg font-bold text-sm text-white bg-gradient-to-r border-0 outline-none shadow-lg',
+                      `${getRoleColor(member.role)}`
+                    )}
+                  >
+                    <option value="waiter">Waiter</option>
+                    <option value="receptionist">Receptionist</option>
+                    <option value="admin">Admin</option>
+                  </select>
+
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    onClick={() => handleDeleteStaff(member.staffNumber)}
+                    className="p-2 hover:bg-red-500/20 rounded-lg text-red-400 border border-transparent hover:border-red-500/30"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          ))
+        )}
+      </div>
+
+      {/* Info Box */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white/5 border border-white/10 rounded-2xl p-6 sm:p-8"
+        className="backdrop-blur-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/30 p-6 rounded-2xl shadow-2xl"
       >
-        <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-          <Users className="h-5 w-5 text-indigo-400" />
-          Staff Members ({staff.length})
-        </h3>
-
-        {loading ? (
-          <div className="flex justify-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
-          </div>
-        ) : staff.length === 0 ? (
-          <div className="text-center py-12">
-            <Users className="h-12 w-12 text-white/20 mx-auto mb-4" />
-            <p className="text-white/60">No staff members added yet</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <AnimatePresence>
-              {staff.map((member) => (
-                <motion.div
-                  key={member.email}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all"
-                >
-                  <div className="flex-1">
-                    <p className="font-semibold text-white">{member.displayName || member.email}</p>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs px-2 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 font-bold uppercase">
-                        {member.role}
-                      </span>
-                      <span className="text-xs text-white/50">{member.restaurantId}</span>
-                      <span className="text-xs text-white/30">{member.email}</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteStaff(member.email)}
-                    className="ml-4 p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
-                    title="Remove staff member"
-                  >
-                    <Trash2 className="h-5 w-5" />
-                  </button>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
+        <h3 className="text-lg font-bold text-blue-300 mb-3">Staff Login Instructions</h3>
+        <div className="space-y-2 text-blue-200 text-sm">
+          <p>✓ Each staff member gets a unique Staff Number (e.g., 1001, 1002, etc.)</p>
+          <p>✓ Admin sets a password for each staff member</p>
+          <p>✓ Staff logs in using their Staff Number + Password</p>
+          <p>✓ No need to wait for email confirmations!</p>
+          <p>✓ Admin can change staff roles anytime using the dropdown</p>
+        </div>
       </motion.div>
     </div>
   );

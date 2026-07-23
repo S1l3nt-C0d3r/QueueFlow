@@ -1,0 +1,6 @@
+name: local
+variables:
+  - name: baseUrl
+    value: http://localhost:5000/api
+  - name: token
+    value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdGFmZklkIjoiNzE2N2Y4YTQtMGExMi00NTY2LWFlY2YtZGVmMDQ0YTc1ODdlIiwicmVzdGF1cmFudElkIjoiZGVtby1yZXN0YXVyYW50Iiwicm9sZUlkIjoiYWRtaW4iLCJkaXNwbGF5TmFtZSI6IkFkbWluaXN0cmF0b3IiLCJzdGFmZk51bWJlciI6IkFETUlOMDAxIiwiaWF0IjoxNzg0MTU5MTc2LCJleHAiOjE3ODQxODc5NzZ9.eYb83eqsm3BcqXv4T09RZH8Nqmpg8GUgkijNSOTn578

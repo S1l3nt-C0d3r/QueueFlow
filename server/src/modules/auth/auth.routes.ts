@@ -1,0 +1,11 @@
+import { Router } from "express";
+import { AuthController } from "./auth.controller";
+import { authenticate } from "../../middleware/auth";
+
+const router = Router();
+const controller = new AuthController();
+
+router.post("/login", controller.login);
+router.get("/me", authenticate, controller.me);
+
+export default router;

@@ -1,28 +1,21 @@
 import { useState, useEffect } from 'react';
 import { db, auth } from '../lib/firebase';
-import { collection, onSnapshot, query, where, doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { Users, Menu, BarChart3, LogOut, Settings, Plus, Trash2, Clock, CheckCircle2, XCircle, AlertCircle, Grid3X3 } from 'lucide-react';
-import { signOut, User as FirebaseUser } from 'firebase/auth';
+import { collection, onSnapshot, query, where, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { Users, Menu, BarChart3, LogOut, Settings, Plus, Trash2, Clock, CheckCircle2, XCircle, AlertCircle, Grid3X3, TrendingUp, ClipboardList } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import MenuManagement from './MenuManagement';
 import RestaurantLayout from './RestaurantLayout';
+import StaffManagement from './StaffManagement';
 import UserProfile from './UserProfile';
 import { motion, AnimatePresence } from 'motion/react';
 
 type AdminTab = 'overview' | 'staff' | 'menu' | 'queue' | 'tables';
 
 interface RestaurantAdminViewProps {
-  user: FirebaseUser;
   restaurantId: string;
   restaurantName: string;
   displayName?: string;
-}
-
-interface StaffMember {
-  email: string;
-  displayName?: string;
-  role: 'waiter' | 'receptionist' | 'admin';
 }
 
 interface QueueEntry {
@@ -35,588 +28,362 @@ interface QueueEntry {
   updatedAt: string;
 }
 
-export default function RestaurantAdminView({ user, restaurantId, restaurantName, displayName }: RestaurantAdminViewProps) {
+export default function RestaurantAdminView({restaurantId, restaurantName, displayName}: RestaurantAdminViewProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
-  const [staff, setStaff] = useState<StaffMember[]>([]);
   const [queue, setQueue] = useState<QueueEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  
-  const [newStaffEmail, setNewStaffEmail] = useState('');
-  const [newStaffRole, setNewStaffRole] = useState<'waiter' | 'receptionist'>('waiter');
-  const [newStaffName, setNewStaffName] = useState('');
-  
+  const [accessDenied, setAccessDenied] = useState(false);
   const navigate = useNavigate();
 
-  // Load staff for this restaurant
   useEffect(() => {
-    const staffCollection = collection(db, 'users');
-    const q = query(staffCollection, where('restaurantId', '==', restaurantId));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const staffList: StaffMember[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        // Don't include global admins in this list
-        if (data.role !== 'global_admin') {
-          staffList.push({
-            email: doc.id,
-            displayName: data.displayName,
-            role: data.role
-          });
-        }
-      });
-      setStaff(staffList.sort((a, b) => a.email.localeCompare(b.email)));
-      setLoading(false);
-    });
+    const verifyAdminAccess = async () => {
+  try {
 
-    return () => unsubscribe();
+    const staffNumber = localStorage.getItem("staffNumber");
+
+    if (!staffNumber) {
+      setError("No active session");
+      setAccessDenied(true);
+      setLoading(false);
+      return;
+    }
+
+    const staffDoc = await getDoc(
+      doc(
+        db,
+        "restaurants",
+        restaurantId,
+        "staff",
+        staffNumber
+      )
+    );
+
+    if (!staffDoc.exists()) {
+      setError("Admin account not found");
+      setAccessDenied(true);
+      setLoading(false);
+      return;
+    }
+
+    const staffData = staffDoc.data();
+
+    if (staffData.role !== "admin") {
+      setError("Admin access required");
+      setAccessDenied(true);
+      setLoading(false);
+      return;
+    }
+
+    if (staffData.status !== "active") {
+      setError("Your account has been disabled.");
+      setAccessDenied(true);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(false);
+
+  } catch (err) {
+
+    console.error(err);
+
+    setError("Access verification failed");
+
+    setAccessDenied(true);
+
+    setLoading(false);
+
+  }
+};
+
+    verifyAdminAccess();
   }, [restaurantId]);
 
-  // Load queue for this restaurant
   useEffect(() => {
-    const queueCollection = collection(db, 'restaurants', restaurantId, 'queue');
-    const unsubscribe = onSnapshot(queueCollection, (snapshot) => {
-      const queueList: QueueEntry[] = [];
+    if (accessDenied || loading) return;
+
+    const q = query(
+      collection(db, 'restaurants', restaurantId, 'queue'),
+      where('status', 'in', ['waiting', 'notified', 'seated'])
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const entries: QueueEntry[] = [];
       snapshot.forEach((doc) => {
-        const data = doc.data();
-        queueList.push({
+        entries.push({
           id: doc.id,
-          customerName: data.customerName,
-          partySize: data.partySize,
-          status: data.status,
-          position: data.position || 0,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt
+          customerName: doc.data().customerName,
+          partySize: doc.data().partySize,
+          status: doc.data().status,
+          position: entries.length + 1,
+          createdAt: doc.data().joinedAt || new Date().toISOString(),
+          updatedAt: doc.data().updatedAt || new Date().toISOString()
         });
       });
-      // Sort by position
-      setQueue(queueList.sort((a, b) => a.position - b.position));
+      setQueue(entries.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
     });
 
     return () => unsubscribe();
-  }, [restaurantId]);
-
-  const handleAddStaff = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!newStaffEmail || !newStaffRole) {
-      setError('Please fill in all fields');
-      return;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(newStaffEmail)) {
-      setError('Please enter a valid email address');
-      return;
-    }
-
-    setSubmitting(true);
-    setError(null);
-
-    try {
-      const email = newStaffEmail.toLowerCase();
-      await setDoc(doc(db, 'users', email), {
-        email,
-        role: newStaffRole,
-        restaurantId,
-        displayName: newStaffName || email.split('@')[0],
-        createdAt: new Date().toISOString()
-      });
-
-      setNewStaffEmail('');
-      setNewStaffName('');
-      setNewStaffRole('waiter');
-      setSuccess(`Added ${email} as ${newStaffRole}`);
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to add staff member');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleRemoveStaff = async (email: string) => {
-    if (!window.confirm(`Remove ${email} from your staff?`)) return;
-
-    try {
-      await deleteDoc(doc(db, 'users', email));
-      setSuccess(`Removed ${email}`);
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError('Failed to remove staff member');
-    }
-  };
-
-  const handleUpdateQueueStatus = async (entryId: string, newStatus: string) => {
-    try {
-      await setDoc(
-        doc(db, 'restaurants', restaurantId, 'queue', entryId),
-        { status: newStatus, updatedAt: new Date().toISOString() },
-        { merge: true }
-      );
-    } catch (err) {
-      setError('Failed to update queue');
-    }
-  };
+  }, [restaurantId, loading, accessDenied]);
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
-      navigate('/login');
+      localStorage.clear();
+      window.location.href = "/";
     } catch (err) {
-      setError('Failed to sign out');
+      console.error('Logout error:', err);
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#050505] flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mx-auto mb-4"></div>
-          <p className="text-white/60">Loading restaurant dashboard...</p>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-900 to-slate-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
       </div>
     );
   }
 
-  // Calculate stats
-  const seatedCount = queue.filter(e => e.status === 'seated').length;
-  const waitingCount = queue.filter(e => e.status === 'waiting').length;
-  const notifiedCount = queue.filter(e => e.status === 'notified').length;
+  if (accessDenied) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-900 to-slate-950 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="backdrop-blur-xl bg-gradient-to-br from-red-500/10 to-pink-500/10 border border-red-500/30 p-8 rounded-2xl text-center max-w-md shadow-2xl"
+        >
+          <AlertCircle className="h-12 w-12 text-red-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
+          <p className="text-red-300 mb-6">{error}</p>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handleLogout}
+            className="w-full py-2 bg-gradient-to-r from-red-500 to-pink-600 text-white rounded-lg font-bold hover:shadow-lg hover:shadow-red-500/50 transition-all"
+          >
+            Logout
+          </motion.button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  const queueStats = {
+    total: queue.length,
+    waiting: queue.filter(q => q.status === 'waiting').length,
+    notified: queue.filter(q => q.status === 'notified').length,
+    seated: queue.filter(q => q.status === 'seated').length
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'waiting': return 'from-blue-500 to-cyan-600';
+      case 'notified': return 'from-orange-500 to-pink-600';
+      case 'seated': return 'from-green-500 to-emerald-600';
+      default: return 'from-gray-500 to-slate-600';
+    }
+  };
+
+  const getStatusBadgeColor = (status: string) => {
+    switch (status) {
+      case 'waiting': return 'bg-blue-500/20 border-blue-500/30 text-blue-300';
+      case 'notified': return 'bg-orange-500/20 border-orange-500/30 text-orange-300';
+      case 'seated': return 'bg-green-500/20 border-green-500/30 text-green-300';
+      default: return 'bg-gray-500/20 border-gray-500/30 text-gray-300';
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-indigo-500/30 pb-safe">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-900 to-slate-950 text-white font-sans">
       {/* Header */}
-      <nav className="glass border-b border-white/5 px-4 sm:px-8 py-4 sm:py-5 flex items-center justify-between sticky top-0 z-50 pt-safe">
-        <div className="flex items-center gap-3 sm:gap-4">
-          <div className="h-10 w-10 sm:h-12 sm:w-12 mesh-gradient-blue rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-            <Settings className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
+      <motion.nav
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="backdrop-blur-xl bg-white/5 border-b border-white/10 px-4 sm:px-8 py-4 flex items-center justify-between sticky top-0 z-50 shadow-lg"
+      >
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shadow-lg shadow-purple-500/50">
+            <Settings className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h1 className="text-lg sm:text-xl font-display font-bold text-white tracking-tight leading-tight">{restaurantName}</h1>
-            <p className="text-[9px] sm:text-[10px] text-white/40 font-black uppercase tracking-[0.2em]">Restaurant Management</p>
+            <h1 className="text-2xl font-display font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
+              {restaurantName}
+            </h1>
+            <p className="text-xs text-white/50 uppercase tracking-widest">Restaurant Admin</p>
           </div>
         </div>
+      </motion.nav>
 
-        {/* Right side: User Profile */}
-        <div className="flex items-center gap-3 sm:gap-4">
-          <UserProfile user={user} displayName={displayName} />
-          <button
-            onClick={handleLogout}
-            className="h-10 w-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-red-400 hover:bg-red-400/10 hover:border-red-400/20 transition-all"
-          >
-            <LogOut className="h-5 w-5" />
-          </button>
-        </div>
-      </nav>
-
-      {/* Tabs Navigation */}
-      <div className="border-b border-white/10 bg-white/[0.02]">
+      {/* Tabs */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.1 }}
+        className="backdrop-blur-sm bg-white/5 border-b border-white/10"
+      >
         <div className="px-4 sm:px-8 max-w-7xl mx-auto">
-          <div className="flex gap-8 overflow-x-auto">
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={cn(
-                "px-4 py-4 font-medium border-b-2 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap",
-                activeTab === 'overview'
-                  ? 'border-blue-500 text-blue-400'
-                  : 'border-transparent text-white/60 hover:text-white'
-              )}
-            >
-              <BarChart3 className="h-5 w-5" />
-              Overview
-            </button>
-            <button
-              onClick={() => setActiveTab('queue')}
-              className={cn(
-                "px-4 py-4 font-medium border-b-2 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap",
-                activeTab === 'queue'
-                  ? 'border-blue-500 text-blue-400'
-                  : 'border-transparent text-white/60 hover:text-white'
-              )}
-            >
-              <Clock className="h-5 w-5" />
-              Queue
-            </button>
-            <button
-              onClick={() => setActiveTab('tables')}
-              className={cn(
-                "px-4 py-4 font-medium border-b-2 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap",
-                activeTab === 'tables'
-                  ? 'border-blue-500 text-blue-400'
-                  : 'border-transparent text-white/60 hover:text-white'
-              )}
-            >
-              <Grid3X3 className="h-5 w-5" />
-              Tables
-            </button>
-            <button
-              onClick={() => setActiveTab('staff')}
-              className={cn(
-                "px-4 py-4 font-medium border-b-2 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap",
-                activeTab === 'staff'
-                  ? 'border-blue-500 text-blue-400'
-                  : 'border-transparent text-white/60 hover:text-white'
-              )}
-            >
-              <Users className="h-5 w-5" />
-              Staff
-            </button>
-            <button
-              onClick={() => setActiveTab('menu')}
-              className={cn(
-                "px-4 py-4 font-medium border-b-2 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap",
-                activeTab === 'menu'
-                  ? 'border-blue-500 text-blue-400'
-                  : 'border-transparent text-white/60 hover:text-white'
-              )}
-            >
-              <Menu className="h-5 w-5" />
-              Menu
-            </button>
+          <div className="flex gap-4 overflow-x-auto">
+            {[
+              { key: 'overview', label: 'Overview', icon: TrendingUp, color: 'from-blue-500 to-cyan-600' },
+              { key: 'staff', label: 'Staff', icon: Users, color: 'from-purple-500 to-pink-600' },
+              { key: 'menu', label: 'Menu', icon: Menu, color: 'from-orange-500 to-pink-600' },
+              { key: 'queue', label: 'Queue', icon: Clock, color: 'from-green-500 to-emerald-600' },
+              { key: 'tables', label: 'Tables', icon: Grid3X3, color: 'from-cyan-500 to-blue-600' }
+            ].map(({ key, label, icon: Icon, color }) => (
+              <motion.button
+                key={key}
+                onClick={() => setActiveTab(key as AdminTab)}
+                whileHover={{ scale: 1.02 }}
+                className={cn(
+                  "px-6 py-4 font-bold border-b-2 transition-all flex items-center gap-2 text-sm whitespace-nowrap",
+                  activeTab === key
+                    ? `border-b-4 bg-gradient-to-r ${color} text-white rounded-t-lg shadow-lg`
+                    : 'border-transparent text-white/60 hover:text-white'
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                {label}
+              </motion.button>
+            ))}
           </div>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Error and Success Messages */}
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="mx-4 sm:mx-8 mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400"
-          >
-            {error}
-          </motion.div>
-        )}
-        {success && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="mx-4 sm:mx-8 mt-4 p-4 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400"
-          >
-            {success}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Main Content */}
+      {/* Content */}
       <main className="p-4 sm:p-8 max-w-7xl mx-auto w-full">
-        {/* Overview Tab */}
-        {activeTab === 'overview' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-6 sm:space-y-8"
-          >
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 sm:gap-6">
-              <div className="glass-morphism p-6 sm:p-8 rounded-2xl sm:rounded-3xl relative overflow-hidden">
-                <div className="absolute inset-0 mesh-gradient-blue opacity-10" />
-                <div className="relative z-10">
-                  <div className="h-10 w-10 rounded-xl bg-blue-500/20 flex items-center justify-center mb-4 border border-blue-500/30">
-                    <Users className="h-5 w-5 text-blue-400" />
-                  </div>
-                  <p className="text-3xl sm:text-4xl font-display font-bold text-white tracking-tighter">{staff.length}</p>
-                  <p className="text-[9px] sm:text-[10px] text-blue-400/60 font-black uppercase tracking-widest mt-2">Staff Members</p>
-                </div>
+        <AnimatePresence mode="wait">
+          {/* Overview Tab */}
+          {activeTab === 'overview' && (
+            <motion.div
+              key="overview"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-8"
+            >
+              <h2 className="text-3xl font-display font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                Queue Overview
+              </h2>
+
+              {/* Stats Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {[
+                  { label: 'Total Queue', value: queueStats.total, color: 'from-blue-500 to-cyan-600' },
+                  { label: 'Waiting', value: queueStats.waiting, color: 'from-purple-500 to-pink-600' },
+                  { label: 'Notified', value: queueStats.notified, color: 'from-orange-500 to-pink-600' },
+                  { label: 'Seated', value: queueStats.seated, color: 'from-green-500 to-emerald-600' }
+                ].map((stat, idx) => (
+                  <motion.div
+                    key={stat.label}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    whileHover={{ y: -8 }}
+                    className={`backdrop-blur-xl bg-gradient-to-br ${stat.color} p-1 rounded-2xl shadow-lg`}
+                  >
+                    <div className="bg-slate-950 p-6 rounded-xl">
+                      <p className="text-white/60 text-sm font-bold mb-2 uppercase">{stat.label}</p>
+                      <p className="text-4xl font-display font-bold bg-gradient-to-r ${stat.color} bg-clip-text text-transparent">
+                        {stat.value}
+                      </p>
+                    </div>
+                  </motion.div>
+                ))}
               </div>
 
-              <div className="glass-morphism p-6 sm:p-8 rounded-2xl sm:rounded-3xl relative overflow-hidden">
-                <div className="absolute inset-0 mesh-gradient-purple opacity-10" />
-                <div className="relative z-10">
-                  <div className="h-10 w-10 rounded-xl bg-purple-500/20 flex items-center justify-center mb-4 border border-purple-500/30">
-                    <Clock className="h-5 w-5 text-purple-400" />
-                  </div>
-                  <p className="text-3xl sm:text-4xl font-display font-bold text-white tracking-tighter">{waitingCount}</p>
-                  <p className="text-[9px] sm:text-[10px] text-purple-400/60 font-black uppercase tracking-widest mt-2">Waiting</p>
-                </div>
-              </div>
-
-              <div className="glass-morphism p-6 sm:p-8 rounded-2xl sm:rounded-3xl relative overflow-hidden">
-                <div className="absolute inset-0 mesh-gradient-orange opacity-10" />
-                <div className="relative z-10">
-                  <div className="h-10 w-10 rounded-xl bg-orange-500/20 flex items-center justify-center mb-4 border border-orange-500/30">
-                    <AlertCircle className="h-5 w-5 text-orange-400" />
-                  </div>
-                  <p className="text-3xl sm:text-4xl font-display font-bold text-white tracking-tighter">{notifiedCount}</p>
-                  <p className="text-[9px] sm:text-[10px] text-orange-400/60 font-black uppercase tracking-widest mt-2">Ready to Seat</p>
-                </div>
-              </div>
-
-              <div className="glass-morphism p-6 sm:p-8 rounded-2xl sm:rounded-3xl relative overflow-hidden">
-                <div className="absolute inset-0 mesh-gradient-green opacity-10" />
-                <div className="relative z-10">
-                  <div className="h-10 w-10 rounded-xl bg-green-500/20 flex items-center justify-center mb-4 border border-green-500/30">
-                    <CheckCircle2 className="h-5 w-5 text-green-400" />
-                  </div>
-                  <p className="text-3xl sm:text-4xl font-display font-bold text-white tracking-tighter">{seatedCount}</p>
-                  <p className="text-[9px] sm:text-[10px] text-green-400/60 font-black uppercase tracking-widest mt-2">Seated</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="glass-morphism p-6 sm:p-8 rounded-2xl sm:rounded-3xl relative overflow-hidden">
-              <div className="absolute inset-0 mesh-gradient-blue opacity-10" />
-              <div className="relative z-10">
-                <h3 className="text-xl sm:text-2xl font-display font-bold text-white mb-4 flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
-                    <BarChart3 className="h-5 w-5 text-blue-400" />
-                  </div>
-                  Restaurant Dashboard
-                </h3>
-                <p className="text-white/60 text-sm">
-                  Welcome to your restaurant management dashboard. Use the tabs above to manage your queue, tables, staff, and menu.
-                </p>
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Queue Tab */}
-        {activeTab === 'queue' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
-          >
-            <div className="glass-morphism p-6 sm:p-8 rounded-2xl sm:rounded-3xl">
-              <h3 className="text-xl font-display font-bold text-white mb-6 flex items-center gap-2">
-                <Clock className="h-5 w-5 text-orange-400" />
-                Queue Management
-              </h3>
-
-              {queue.length === 0 ? (
-                <div className="text-center py-12">
-                  <Clock className="h-12 w-12 text-white/20 mx-auto mb-4" />
-                  <p className="text-white/60">No queue entries yet</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <AnimatePresence>
-                    {queue.map((entry) => (
+              {/* Queue List */}
+              <div className="backdrop-blur-xl bg-white/10 border border-white/20 p-8 rounded-2xl shadow-2xl">
+                <h3 className="text-xl font-bold text-white mb-6">Current Queue</h3>
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {queue.length === 0 ? (
+                    <p className="text-white/50 text-center py-8">Queue is empty</p>
+                  ) : (
+                    queue.map((entry, idx) => (
                       <motion.div
                         key={entry.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        className="p-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all"
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <p className="font-bold text-white text-lg">{entry.customerName}</p>
-                              <span className="text-xs bg-white/10 px-2 py-1 rounded text-white/70">
-                                Party of {entry.partySize}
-                              </span>
-                            </div>
-                            <p className="text-sm text-white/60">
-                              Position: #{entry.position}
-                            </p>
-                          </div>
-
-                          <div className="flex flex-wrap gap-2">
-                            {entry.status === 'waiting' && (
-                              <>
-                                <button
-                                  onClick={() => handleUpdateQueueStatus(entry.id, 'notified')}
-                                  className="px-3 py-2 bg-orange-500/20 text-orange-300 text-xs font-bold rounded-lg hover:bg-orange-500/30 transition-all"
-                                >
-                                  Notify
-                                </button>
-                                <button
-                                  onClick={() => handleUpdateQueueStatus(entry.id, 'cancelled')}
-                                  className="px-3 py-2 bg-red-500/20 text-red-300 text-xs font-bold rounded-lg hover:bg-red-500/30 transition-all"
-                                >
-                                  Cancel
-                                </button>
-                              </>
-                            )}
-
-                            {entry.status === 'notified' && (
-                              <>
-                                <button
-                                  onClick={() => handleUpdateQueueStatus(entry.id, 'seated')}
-                                  className="px-3 py-2 bg-green-500/20 text-green-300 text-xs font-bold rounded-lg hover:bg-green-500/30 transition-all"
-                                >
-                                  Seat
-                                </button>
-                                <button
-                                  onClick={() => handleUpdateQueueStatus(entry.id, 'cancelled')}
-                                  className="px-3 py-2 bg-red-500/20 text-red-300 text-xs font-bold rounded-lg hover:bg-red-500/30 transition-all"
-                                >
-                                  Cancel
-                                </button>
-                              </>
-                            )}
-
-                            <span className={cn(
-                              'px-3 py-2 rounded-lg text-xs font-bold',
-                              entry.status === 'waiting' && 'bg-blue-500/20 text-blue-300',
-                              entry.status === 'notified' && 'bg-orange-500/20 text-orange-300',
-                              entry.status === 'seated' && 'bg-green-500/20 text-green-300',
-                              entry.status === 'cancelled' && 'bg-red-500/20 text-red-300'
-                            )}>
-                              {entry.status.charAt(0).toUpperCase() + entry.status.slice(1)}
-                            </span>
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Tables Tab */}
-        {activeTab === 'tables' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <RestaurantLayout restaurantId={restaurantId} />
-          </motion.div>
-        )}
-
-        {/* Staff Tab */}
-        {activeTab === 'staff' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-8"
-          >
-            {/* Add Staff Form */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-indigo-500/10 border border-indigo-500/30 rounded-2xl p-6 sm:p-8"
-            >
-              <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                <Plus className="h-5 w-5 text-indigo-400" />
-                Add Staff Member
-              </h3>
-
-              <form onSubmit={handleAddStaff} className="space-y-5">
-                <div>
-                  <label className="block text-xs font-bold text-white/60 uppercase tracking-wider mb-2">
-                    Email *
-                  </label>
-                  <input
-                    type="email"
-                    value={newStaffEmail}
-                    onChange={e => setNewStaffEmail(e.target.value)}
-                    placeholder="staff@example.com"
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/10 outline-none transition-all text-white placeholder:text-white/30"
-                    disabled={submitting}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-white/60 uppercase tracking-wider mb-2">
-                    Display Name
-                  </label>
-                  <input
-                    type="text"
-                    value={newStaffName}
-                    onChange={e => setNewStaffName(e.target.value)}
-                    placeholder="John Doe (optional)"
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/10 outline-none transition-all text-white placeholder:text-white/30"
-                    disabled={submitting}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-white/60 uppercase tracking-wider mb-2">
-                    Role *
-                  </label>
-                  <select
-                    value={newStaffRole}
-                    onChange={e => setNewStaffRole(e.target.value as 'waiter' | 'receptionist')}
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/10 outline-none transition-all text-white"
-                    disabled={submitting}
-                  >
-                    <option value="waiter" className="bg-[#050505]">Waiter</option>
-                    <option value="receptionist" className="bg-[#050505]">Receptionist</option>
-                  </select>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={submitting || !newStaffEmail}
-                  className="w-full py-3 px-4 bg-indigo-500 text-white font-bold rounded-xl hover:bg-indigo-600 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
-                >
-                  {submitting ? 'Adding...' : 'Add Staff Member'}
-                </button>
-              </form>
-            </motion.div>
-
-            {/* Staff List */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white/5 border border-white/10 rounded-2xl p-6 sm:p-8"
-            >
-              <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                <Users className="h-5 w-5 text-indigo-400" />
-                Your Staff ({staff.length})
-              </h3>
-
-              {staff.length === 0 ? (
-                <div className="text-center py-12">
-                  <Users className="h-12 w-12 text-white/20 mx-auto mb-4" />
-                  <p className="text-white/60">No staff members yet</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <AnimatePresence>
-                    {staff.map((member) => (
-                      <motion.div
-                        key={member.email}
-                        initial={{ opacity: 0, x: -20 }}
+                        initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all"
+                        transition={{ delay: idx * 0.05 }}
+                        className="flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
                       >
-                        <div className="flex-1">
-                          <p className="font-semibold text-white">{member.displayName || member.email}</p>
-                          <div className="flex items-center gap-3 mt-1">
-                            <span className="text-xs px-2 py-1 rounded-lg bg-indigo-500/20 text-indigo-300 font-bold uppercase">
-                              {member.role}
-                            </span>
-                            <span className="text-xs text-white/50">{member.email}</span>
+                        <div className="flex items-center gap-4 flex-1">
+                          <div className={`h-10 w-10 rounded-lg bg-gradient-to-br ${getStatusColor(entry.status)} flex items-center justify-center text-white font-bold`}>
+                            {entry.position}
+                          </div>
+                          <div>
+                            <p className="text-white font-bold">{entry.customerName}</p>
+                            <p className="text-white/50 text-sm">{entry.partySize} people</p>
                           </div>
                         </div>
-                        <button
-                          onClick={() => handleRemoveStaff(member.email)}
-                          className="ml-4 p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
+                        <span className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${getStatusBadgeColor(entry.status)}`}>
+                          {entry.status.charAt(0).toUpperCase() + entry.status.slice(1)}
+                        </span>
                       </motion.div>
-                    ))}
-                  </AnimatePresence>
+                    ))
+                  )}
                 </div>
-              )}
+              </div>
             </motion.div>
-          </motion.div>
-        )}
+          )}
 
-        {/* Menu Tab */}
-        {activeTab === 'menu' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-gradient-to-br from-white/[0.05] to-white/[0.01] border border-white/10 rounded-2xl p-6 sm:p-8"
-          >
-            <MenuManagement restaurantId={restaurantId} />
-          </motion.div>
-        )}
+          {/* Staff Tab */}
+          {activeTab === 'staff' && (
+            <motion.div
+              key="staff"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <StaffManagement restaurantId={restaurantId} />
+            </motion.div>
+          )}
+
+          {/* Menu Tab */}
+          {activeTab === 'menu' && (
+            <motion.div
+              key="menu"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <MenuManagement restaurantId={restaurantId} />
+            </motion.div>
+          )}
+
+          {/* Queue Tab */}
+          {activeTab === 'queue' && (
+            <motion.div
+              key="queue"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
+            >
+              <h2 className="text-3xl font-display font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent flex items-center gap-3">
+                <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-green-500/50">
+                  <ClipboardList className="h-6 w-6 text-white" />
+                </div>
+                Queue Management
+              </h2>
+              <div className="backdrop-blur-xl bg-white/10 border border-white/20 p-8 rounded-2xl shadow-2xl">
+                <p className="text-white/60">Full queue management interface coming soon</p>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Tables Tab */}
+          {activeTab === 'tables' && (
+            <motion.div
+              key="tables"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <RestaurantLayout restaurantId={restaurantId} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );

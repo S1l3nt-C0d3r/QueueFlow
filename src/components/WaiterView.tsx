@@ -1,327 +1,376 @@
 import { useState, useEffect } from 'react';
-import { db, auth } from '../lib/firebase';
-import { collection, onSnapshot, query, where, orderBy, doc, getDoc, updateDoc, Unsubscribe } from 'firebase/firestore';
-import { Users, Clock, CheckCircle2, XCircle, AlertCircle, LogOut, LayoutDashboard, History, ShoppingCart, ArrowLeft, Grid3X3 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { db } from '../lib/firebase';
+import { collection, onSnapshot, query, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { LogOut, ShoppingCart, Clock, Users, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { cn } from '../lib/utils';
-import OrdersView from './OrdersView';
-import RestaurantLayout from './RestaurantLayout';
-import UserProfile from './UserProfile';
+import { motion, AnimatePresence } from 'motion/react';
 
-type ViewMode = 'queue' | 'orders' | 'tables';
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
+interface Table {
+  id: string;
+  tableNumber: number;
+  capacity: number;
+  status: 'available' | 'occupied' | 'cleaning' | 'reserved';
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+interface Order {
+  id: string;
+  tableId: string;
+  tableNumber: number;
+  items: any[];
+  totalPrice: number;
+  status: 'pending' | 'confirmed' | 'preparing' | 'ready' | 'served';
+  customerName: string;
+  createdAt: string;
+}
+
+interface Bill {
+  id: string;
+  tableId: string;
+  tableNumber: number;
+  status: 'pending' | 'paid';
+  requestedAt: string;
 }
 
 export default function WaiterView() {
-  const { restaurantId: urlRestaurantId } = useParams();
-  const [restaurant, setRestaurant] = useState<any>(null);
-  const [queue, setQueue] = useState<any[]>([]);
-  const [userProfile, setUserProfile] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('queue');
+  const { restaurantId } = useParams();
   const navigate = useNavigate();
 
+  const [tables, setTables] = useState<Table[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'ready'>('all');
+  const [displayName, setDisplayName] = useState('');
+
+  if (!restaurantId) {
+    return <div className="p-4 text-red-500">Restaurant ID not found</div>;
+  }
+
+  // Get display name from localStorage
   useEffect(() => {
-    let unsubscribe: Unsubscribe | null = null;
+    const name = localStorage.getItem('displayName') || 'Waiter';
+    setDisplayName(name);
+  }, []);
 
-    const setupView = async () => {
-      if (!auth.currentUser) return;
-
-      try {
-        const userDoc = await getDoc(doc(db, 'users', auth.currentUser.email!.toLowerCase()));
-        let profile = {
-          email: auth.currentUser.email,
-          role: 'waiter',
-          restaurantId: urlRestaurantId || 'default'
-        };
-
-        if (userDoc.exists()) {
-          const storedProfile = userDoc.data() as any;
-          profile = {
-            ...storedProfile,
-            restaurantId: urlRestaurantId || storedProfile.restaurantId
-          };
-        }
-        
-        setUserProfile(profile);
-        
-        // Fetch restaurant
-        const restaurantIdToUse = profile.restaurantId;
-        try {
-          const restDoc = await getDoc(doc(db, 'restaurants', restaurantIdToUse));
-          if (restDoc.exists()) {
-            setRestaurant({ id: restDoc.id, ...restDoc.data() });
-          } else {
-            setRestaurant({ id: restaurantIdToUse, name: 'QueueFlow Restaurant' });
-          }
-        } catch (err) {
-          handleFirestoreError(err, OperationType.GET, `restaurants/${restaurantIdToUse}`);
-        }
-
-        // Listen to queue
-        const q = query(
-          collection(db, 'restaurants', restaurantIdToUse, 'queue'),
-          where('status', 'in', ['waiting', 'notified', 'seated']),
-          orderBy('joinedAt', 'asc')
-        );
-
-        unsubscribe = onSnapshot(q, (snapshot) => {
-          setQueue(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-          setLoading(false);
-        }, (err) => {
-          handleFirestoreError(err, OperationType.LIST, `restaurants/${restaurantIdToUse}/queue`);
-          setError("Permission denied. You may not be assigned to this restaurant.");
-          setLoading(false);
-        });
-
-      } catch (err) {
-        handleFirestoreError(err, OperationType.GET, `users/${auth.currentUser?.email}`);
-        setLoading(false);
+  // Load tables
+  useEffect(() => {
+    const q = query(collection(db, 'restaurants', restaurantId, 'settings'));
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      if (snapshot.size > 0) {
+        const layoutDoc = snapshot.docs[0];
+        const data = layoutDoc.data();
+        setTables(data.tables || []);
       }
-    };
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [restaurantId]);
 
-    setupView();
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [urlRestaurantId]);
+  // Load orders in real-time
+  useEffect(() => {
+    const q = query(collection(db, 'restaurants', restaurantId, 'orders'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const ordersList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Order[];
+      setOrders(ordersList);
+    });
+    return () => unsubscribe();
+  }, [restaurantId]);
 
-  const handleSeat = async (entryId: string) => {
-    if (!restaurant) return;
+  // Load bills in real-time
+  useEffect(() => {
+    const q = query(collection(db, 'restaurants', restaurantId, 'bills'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const billsList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Bill[];
+      setBills(billsList);
+    });
+    return () => unsubscribe();
+  }, [restaurantId]);
+
+  const handleUpdateOrderStatus = async (orderId: string, newStatus: Order['status']) => {
     try {
-      await updateDoc(doc(db, 'restaurants', restaurant.id, 'queue', entryId), {
-        status: 'seated',
-        seatedAt: new Date().toISOString()
+      await updateDoc(doc(db, 'restaurants', restaurantId, 'orders', orderId), {
+        status: newStatus,
+        updatedAt: new Date().toISOString()
       });
+      setSuccess('Order updated ✓');
+      setTimeout(() => setSuccess(null), 2000);
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `restaurants/${restaurant.id}/queue/${entryId}`);
+      setError('Failed to update order');
     }
   };
 
-  const handleCancel = async (entryId: string) => {
-    if (!restaurant) return;
+  const handleMarkBillPaid = async (billId: string) => {
     try {
-      await updateDoc(doc(db, 'restaurants', restaurant.id, 'queue', entryId), {
-        status: 'cancelled'
+      await updateDoc(doc(db, 'restaurants', restaurantId, 'bills', billId), {
+        status: 'paid'
       });
+      setSuccess('Bill marked as paid ✓');
+      setTimeout(() => setSuccess(null), 2000);
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `restaurants/${restaurant.id}/queue/${entryId}`);
+      setError('Failed to update bill');
     }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    setRefreshing(false);
   };
 
   const handleLogout = () => {
-    auth.signOut();
-    navigate('/login');
+    localStorage.clear();
+    navigate('/');
   };
 
-  if (loading) return <div className="p-8 text-center text-white">Loading...</div>;
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, { bg: string; text: string; badge: string }> = {
+      pending: { bg: 'from-blue-500 to-cyan-600', text: 'text-blue-300', badge: 'bg-blue-500/20 text-blue-300' },
+      confirmed: { bg: 'from-purple-500 to-pink-600', text: 'text-purple-300', badge: 'bg-purple-500/20 text-purple-300' },
+      preparing: { bg: 'from-orange-500 to-pink-600', text: 'text-orange-300', badge: 'bg-orange-500/20 text-orange-300' },
+      ready: { bg: 'from-green-500 to-emerald-600', text: 'text-green-300', badge: 'bg-green-500/20 text-green-300' },
+      served: { bg: 'from-gray-500 to-slate-600', text: 'text-gray-300', badge: 'bg-gray-500/20 text-gray-300' }
+    };
+    return colors[status] || colors.pending;
+  };
 
-  if (error) {
+  const getTableStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      available: 'bg-green-500/20 text-green-300',
+      occupied: 'bg-red-500/20 text-red-300',
+      cleaning: 'bg-yellow-500/20 text-yellow-300',
+      reserved: 'bg-blue-500/20 text-blue-300'
+    };
+    return colors[status] || colors.available;
+  };
+
+  const filteredOrders = activeFilter === 'all'
+    ? orders
+    : activeFilter === 'pending'
+    ? orders.filter(o => ['pending', 'confirmed', 'preparing'].includes(o.status))
+    : orders.filter(o => o.status === 'ready');
+
+  const pendingBills = bills.filter(b => b.status === 'pending');
+
+  if (loading) {
     return (
-      <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6">
-        <div className="bg-white/5 border border-red-500/30 p-8 rounded-2xl max-w-md w-full text-center backdrop-blur-xl">
-          <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-white mb-2">Access Denied</h2>
-          <p className="text-white/60 mb-6">{error}</p>
-          <button 
-            onClick={handleLogout}
-            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all"
-          >
-            Sign Out
-          </button>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-900 to-slate-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
       </div>
     );
   }
 
-  const seatedCount = queue.filter(e => e.status === 'seated').length;
-  const waitingCount = queue.filter(e => e.status === 'waiting').length;
-  const notifiedCount = queue.filter(e => e.status === 'notified').length;
-
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-indigo-500/30 pb-safe">
-      {/* Top Nav */}
-      <nav className="glass border-b border-white/5 px-4 sm:px-8 py-4 sm:py-5 flex items-center justify-between sticky top-0 z-50 pt-safe">
-        <div className="flex items-center gap-3 sm:gap-4">
-          <button
-            onClick={() => navigate('/admin')}
-            className="h-10 w-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-all"
-            title="Back to Admin"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div className="h-10 w-10 sm:h-12 sm:w-12 mesh-gradient-indigo rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Users className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-900 to-slate-950 text-white font-sans pb-20">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="backdrop-blur-xl bg-white/5 border-b border-white/10 sticky top-0 z-40 shadow-lg"
+      >
+        <div className="p-4 flex items-center justify-between">
           <div>
-            <h1 className="text-lg sm:text-xl font-display font-bold text-white tracking-tight leading-tight">{restaurant?.name}</h1>
-            <div className="flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
-              <p className="text-[9px] sm:text-[10px] text-white/40 font-black uppercase tracking-[0.2em]">Waiter</p>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 sm:gap-4">
-          <UserProfile user={auth.currentUser} displayName={userProfile?.displayName} />
-          <button 
-            onClick={handleLogout}
-            className="h-10 w-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-red-400 hover:bg-red-400/10 hover:border-red-400/20 transition-all"
-          >
-            <LogOut className="h-5 w-5" />
-          </button>
-        </div>
-      </nav>
-
-      {/* Tab Navigation */}
-      <div className="border-b border-white/10 bg-white/[0.02]">
-        <div className="px-4 sm:px-8 max-w-7xl mx-auto">
-          <div className="flex gap-8 overflow-x-auto">
-            <button
-              onClick={() => setViewMode('queue')}
-              className={cn(
-                "px-4 py-4 font-medium border-b-2 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap",
-                viewMode === 'queue'
-                  ? 'border-indigo-500 text-indigo-400'
-                  : 'border-transparent text-white/60 hover:text-white'
-              )}
-            >
-              <Users className="h-5 w-5" />
-              Queue
-            </button>
-            <button
-              onClick={() => setViewMode('orders')}
-              className={cn(
-                "px-4 py-4 font-medium border-b-2 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap",
-                viewMode === 'orders'
-                  ? 'border-indigo-500 text-indigo-400'
-                  : 'border-transparent text-white/60 hover:text-white'
-              )}
-            >
-              <ShoppingCart className="h-5 w-5" />
+            <h1 className="text-2xl font-display font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
               Orders
-            </button>
-            <button
-              onClick={() => setViewMode('tables')}
+            </h1>
+            <p className="text-xs text-white/60">Welcome, {displayName}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="p-2 hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={cn('h-5 w-5', refreshing && 'animate-spin')} />
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              onClick={handleLogout}
+              className="p-2 hover:bg-red-500/20 rounded-lg text-red-400 transition-all"
+            >
+              <LogOut className="h-5 w-5" />
+            </motion.button>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Messages */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mx-4 mt-4 p-3 bg-gradient-to-r from-red-500/20 to-pink-500/20 border border-red-500/30 rounded-xl text-red-300 flex items-center gap-3 text-sm"
+          >
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            {error}
+          </motion.div>
+        )}
+        {success && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mx-4 mt-4 p-3 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-xl text-green-300 flex items-center gap-3 text-sm"
+          >
+            <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+            {success}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Filter Tabs */}
+      <div className="sticky top-16 z-30 backdrop-blur-sm bg-white/5 border-b border-white/10 p-3">
+        <div className="flex gap-2 overflow-x-auto">
+          {[
+            { key: 'all', label: 'All Orders', icon: ShoppingCart },
+            { key: 'pending', label: 'In Progress', icon: Clock },
+            { key: 'ready', label: 'Ready', icon: CheckCircle2 }
+          ].map(({ key, label, icon: Icon }) => (
+            <motion.button
+              key={key}
+              onClick={() => setActiveFilter(key as any)}
               className={cn(
-                "px-4 py-4 font-medium border-b-2 transition-all flex items-center gap-2 text-sm sm:text-base whitespace-nowrap",
-                viewMode === 'tables'
-                  ? 'border-indigo-500 text-indigo-400'
-                  : 'border-transparent text-white/60 hover:text-white'
+                'px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 whitespace-nowrap transition-all',
+                activeFilter === key
+                  ? 'bg-gradient-to-r from-blue-500 to-cyan-600 text-white shadow-lg'
+                  : 'bg-white/5 border border-white/10 text-white/60'
               )}
             >
-              <Grid3X3 className="h-5 w-5" />
-              Tables
-            </button>
-          </div>
+              <Icon className="h-4 w-4" />
+              {label}
+            </motion.button>
+          ))}
         </div>
       </div>
 
-      {/* Main Content */}
-      <main className="p-4 sm:p-8 max-w-7xl mx-auto w-full">
-        {/* Queue View */}
-        {viewMode === 'queue' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-3 gap-3 sm:gap-4">
-              <div className="p-4 sm:p-6 bg-white/5 rounded-2xl sm:rounded-3xl border border-white/10">
-                <p className="text-2xl sm:text-3xl font-display font-bold text-white tracking-tighter">{seatedCount}</p>
-                <p className="text-[9px] sm:text-[10px] text-white/40 font-black uppercase tracking-widest mt-1">Seated</p>
-              </div>
-              <div className="p-4 sm:p-6 bg-white/5 rounded-2xl sm:rounded-3xl border border-white/10">
-                <p className="text-2xl sm:text-3xl font-display font-bold text-white tracking-tighter">{notifiedCount}</p>
-                <p className="text-[9px] sm:text-[10px] text-white/40 font-black uppercase tracking-widest mt-1">Ready</p>
-              </div>
-              <div className="p-4 sm:p-6 bg-white/5 rounded-2xl sm:rounded-3xl border border-white/10">
-                <p className="text-2xl sm:text-3xl font-display font-bold text-white tracking-tighter">{waitingCount}</p>
-                <p className="text-[9px] sm:text-[10px] text-white/40 font-black uppercase tracking-widest mt-1">Waiting</p>
-              </div>
-            </div>
+      {/* Content */}
+      <main className="p-4 space-y-4">
+        {/* Pending Bills Alert */}
+        {pendingBills.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="backdrop-blur-xl bg-gradient-to-r from-orange-500/20 to-pink-500/20 border border-orange-500/30 p-4 rounded-xl"
+          >
+            <p className="font-bold text-orange-300 flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              {pendingBills.length} pending bill{pendingBills.length > 1 ? 's' : ''}
+            </p>
+          </motion.div>
+        )}
 
-            <div className="space-y-4 sm:space-y-6">
-              <h3 className="text-xl sm:text-2xl font-display font-bold text-white">Queue List</h3>
-              <div className="space-y-3 sm:space-y-4">
-                <AnimatePresence mode="popLayout">
-                  {queue.length === 0 ? (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      className="p-12 rounded-3xl border-2 border-dashed border-white/10 text-center"
-                    >
-                      <AlertCircle className="h-12 w-12 text-white/20 mx-auto mb-3" />
-                      <p className="text-white/40 font-medium">No queue entries</p>
-                    </motion.div>
-                  ) : (
-                    queue.map((entry, idx) => (
-                      <motion.div
-                        key={entry.id}
-                        layout
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className={cn(
-                          "p-4 sm:p-6 rounded-2xl sm:rounded-3xl border transition-all",
-                          entry.status === 'seated' ? "bg-green-500/5 border-green-500/20" :
-                          entry.status === 'notified' ? "bg-blue-500/5 border-blue-500/20" :
-                          "bg-white/5 border-white/10"
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-bold text-white text-sm sm:text-base">{entry.customerName}</h4>
-                            <p className="text-[10px] sm:text-xs text-white/50">
-                              {entry.partySize} people • {entry.status}
-                            </p>
-                          </div>
-                          {entry.status === 'notified' && (
-                            <button
-                              onClick={() => handleSeat(entry.id)}
-                              className="px-4 py-2 bg-green-500 text-white text-xs font-bold rounded-lg hover:bg-green-600 transition-all whitespace-nowrap flex-shrink-0"
-                            >
-                              Seat
-                            </button>
-                          )}
-                        </div>
-                      </motion.div>
-                    ))
+        {/* Orders List */}
+        {filteredOrders.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="backdrop-blur-xl bg-white/10 border border-white/20 p-12 rounded-2xl text-center"
+          >
+            <ShoppingCart className="h-12 w-12 text-white/20 mx-auto mb-3" />
+            <p className="text-white/50">No orders to show</p>
+          </motion.div>
+        ) : (
+          <div className="space-y-3">
+            {filteredOrders.map((order, idx) => {
+              const statusColors = getStatusColor(order.status);
+              return (
+                <motion.div
+                  key={order.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  className={cn(
+                    'backdrop-blur-xl bg-gradient-to-br border-2 p-4 rounded-2xl',
+                    `${statusColors.bg} bg-opacity-10 border-white/20`
                   )}
-                </AnimatePresence>
-              </div>
-            </div>
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-lg text-white">Table {order.tableNumber}</h3>
+                        <span className={cn('text-xs font-bold px-2 py-1 rounded-full', statusColors.badge)}>
+                          {order.status}
+                        </span>
+                      </div>
+                      <p className="text-white/60 text-xs">{order.customerName} • ₹{order.totalPrice}</p>
+                      <p className="text-white/50 text-xs mt-1">
+                        {new Date(order.createdAt).toLocaleTimeString()}
+                      </p>
+                    </div>
+                    <select
+                      value={order.status}
+                      onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value as any)}
+                      className={cn(
+                        'px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-gradient-to-r border-0 outline-none shadow-lg',
+                        statusColors.bg
+                      )}
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="preparing">Preparing</option>
+                      <option value="ready">Ready</option>
+                      <option value="served">Served</option>
+                    </select>
+                  </div>
+
+                  {/* Order Items */}
+                  <div className="space-y-1 py-3 border-t border-white/10">
+                    {order.items.map((item: any) => (
+                      <div key={item.menuItemId} className="flex justify-between text-sm text-white/70">
+                        <span>{item.name} ×{item.quantity}</span>
+                        <span>₹{(item.price * item.quantity).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         )}
 
-        {/* Orders View */}
-        {viewMode === 'orders' && restaurant && (
-          <OrdersView restaurantId={restaurant.id} />
-        )}
-
-        {/* Tables View */}
-        {viewMode === 'tables' && restaurant && (
-          <RestaurantLayout restaurantId={restaurant.id} />
+        {/* Pending Bills Section */}
+        {pendingBills.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-8 space-y-3"
+          >
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Clock className="h-5 w-5 text-orange-400" />
+              Pending Bills ({pendingBills.length})
+            </h2>
+            {pendingBills.map((bill, idx) => (
+              <motion.div
+                key={bill.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.05 }}
+                className="backdrop-blur-xl bg-gradient-to-br from-orange-500/20 to-pink-500/20 border border-orange-500/30 p-4 rounded-2xl flex items-center justify-between"
+              >
+                <div>
+                  <p className="font-bold text-white">Table {bill.tableNumber}</p>
+                  <p className="text-white/60 text-xs">Bill requested</p>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => handleMarkBillPaid(bill.id)}
+                  className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-bold text-sm hover:shadow-lg transition-all"
+                >
+                  Paid
+                </motion.button>
+              </motion.div>
+            ))}
+          </motion.div>
         )}
       </main>
     </div>

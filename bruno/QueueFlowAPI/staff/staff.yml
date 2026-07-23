@@ -1,0 +1,32 @@
+info:
+  name: staff
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/staff"
+  headers:
+    - name: Authorization
+      value: Bearer {{token}}
+  body:
+    type: json
+    data: |-
+      {
+        "staffNumber": "EMP100",
+
+        "displayName": "John",
+
+        "email": "john@test.com",
+
+        "password": "Password@123",
+
+        "roleId": "waiter"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
