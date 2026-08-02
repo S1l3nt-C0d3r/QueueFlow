@@ -12,7 +12,6 @@ async function request<T>(
 
   const response = await fetch(`${BASE_URL}${endpoint}`, {
     ...options,
-
     headers: {
       "Content-Type": "application/json",
       ...(token && {
@@ -22,10 +21,15 @@ async function request<T>(
     },
   });
 
+  // Handle empty responses (204 No Content)
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.message ?? "Request failed");
+    throw new Error(data.message ?? data.error ?? "Request failed");
   }
 
   return data;
@@ -46,6 +50,13 @@ export const api = {
   put<T>(endpoint: string, body: unknown) {
     return request<T>(endpoint, {
       method: "PUT",
+      body: JSON.stringify(body),
+    });
+  },
+
+  patch<T>(endpoint: string, body: unknown) {
+    return request<T>(endpoint, {
+      method: "PATCH",
       body: JSON.stringify(body),
     });
   },
