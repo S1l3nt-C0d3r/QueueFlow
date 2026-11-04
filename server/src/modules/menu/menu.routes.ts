@@ -1,47 +1,94 @@
 import { Router } from "express";
 
-import { MenuController } from "./menu.controller";
-
 import { authenticate } from "../../middleware/auth";
 import { requireRole } from "../../middleware/authorize";
 
-import {
-  ROLE_IDS,
-} from "../../shared/constants";
+import { MenuController } from "./menu.controller";
 
 const router = Router();
 
-const controller =
-  new MenuController();
+const controller = new MenuController();
+
+/*
+ * ============================================================
+ * AUTHENTICATION
+ * ============================================================
+ *
+ * Every Menu endpoint requires an authenticated staff member.
+ *
+ * The restaurant is determined from:
+ *
+ * req.user.restaurantId
+ *
+ * and is never accepted from the client.
+ */
 
 router.use(authenticate);
 
-router.get(
-  "/",
-  controller.getAll
-);
+/*
+ * ============================================================
+ * GET ALL MENU ITEMS
+ * ============================================================
+ *
+ * Admin / Manager / other authenticated staff can view the
+ * restaurant menu.
+ */
 
-router.get(
-  "/:id",
-  controller.getById
-);
+router.get("/", controller.getAll);
 
-router.post(
-  "/",
-  requireRole(
-    ROLE_IDS.ADMIN,
-    ROLE_IDS.MANAGER
-  ),
-  controller.create
-);
+/*
+ * ============================================================
+ * GET MENU ITEM
+ * ============================================================
+ */
 
-router.put(
-  "/:id",
-  requireRole(
-    ROLE_IDS.ADMIN,
-    ROLE_IDS.MANAGER
-  ),
-  controller.update
-);
+router.get("/:id", controller.getById);
+
+/*
+ * ============================================================
+ * CREATE MENU ITEM
+ * ============================================================
+ *
+ * Only Admin and Manager can create menu items.
+ */
+
+router.post("/", requireRole("admin", "manager"), controller.create);
+
+/*
+ * ============================================================
+ * UPDATE MENU ITEM
+ * ============================================================
+ *
+ * Only Admin and Manager can modify menu items.
+ *
+ * This includes:
+ *
+ * - name
+ * - description
+ * - price
+ * - active
+ * - available
+ */
+
+router.put("/:id", requireRole("admin", "manager"), controller.update);
+
+/*
+ * ============================================================
+ * DELETE / RETIRE MENU ITEM
+ * ============================================================
+ *
+ * This is a soft delete.
+ *
+ * The controller/service/repository will change:
+ *
+ * active    = 0
+ * available = 0
+ *
+ * The actual database row remains intact.
+ *
+ * Only Admin and Manager can perform this operation.
+ */
+
+router.delete("/:id", requireRole("admin", "manager"), controller.delete);
 
 export default router;

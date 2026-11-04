@@ -38,22 +38,22 @@ export async function seedDatabase() {
 
   const roles = [
     {
-      id: "admin",
+      id: "role-admin",
       name: SYSTEM_ROLES.ADMIN,
       description: "Restaurant Administrator",
     },
     {
-      id: "manager",
+      id: "rolemanager",
       name: SYSTEM_ROLES.MANAGER,
       description: "Restaurant Manager",
     },
     {
-      id: "waiter",
+      id: "role-waiter",
       name: SYSTEM_ROLES.WAITER,
       description: "Wait Staff",
     },
     {
-      id: "receptionist",
+      id: "role-receptionist",
       name: SYSTEM_ROLES.RECEPTIONIST,
       description: "Front Desk",
     },

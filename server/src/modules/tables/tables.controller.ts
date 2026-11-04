@@ -1,136 +1,153 @@
-import {
-  NextFunction,
-  Request,
-  Response,
-} from "express";
+import { Request, Response } from "express";
 
 import { TablesService } from "./tables.service";
 
+import {
+  CreateTableRequest,
+  UpdateTableRequest,
+  UpdateTableStatusRequest,
+  SeatCustomerRequest,
+} from "./tables.types";
+
+import { HTTP_STATUS } from "../../shared/constants";
+
 export class TablesController {
-  constructor(
-    private readonly service =
-      new TablesService()
-  ) {}
+  constructor(private readonly service = new TablesService()) {}
 
-  getAll = (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
-    try {
-      const result =
-        this.service.getAll(
-          req.user!.restaurantId
-        );
+  /*
+   * ============================================================
+   * GET ALL TABLES
+   * ============================================================
+   */
 
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
+  getAll = (req: Request, res: Response) => {
+    const restaurantId = req.user!.restaurantId;
+
+    const tables = this.service.getAll(restaurantId);
+
+    return res.status(HTTP_STATUS.OK).json(tables);
   };
 
-  getById = (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
-    try {
-      const result =
-        this.service.getById(
-          req.user!.restaurantId,
-          req.params.id as string
-        );
+  /*
+   * ============================================================
+   * GET TABLE BY ID
+   * ============================================================
+   */
 
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
+  getById = (req: Request, res: Response) => {
+    const restaurantId = req.user!.restaurantId;
+
+    const id = String(req.params.id);
+
+    const table = this.service.getById(restaurantId, id);
+
+    return res.status(HTTP_STATUS.OK).json(table);
   };
 
-  create = (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
-    try {
-      const result =
-        this.service.create(
-          req.user!.restaurantId,
-          req.body
-        );
+  /*
+   * ============================================================
+   * CREATE TABLE
+   * ============================================================
+   */
 
-      res.status(201).json(result);
-    } catch (error) {
-      next(error);
-    }
+  create = (req: Request, res: Response) => {
+    const restaurantId = req.user!.restaurantId;
+
+    const request = req.body as CreateTableRequest;
+
+    const table = this.service.create(restaurantId, request);
+
+    return res.status(HTTP_STATUS.CREATED).json(table);
   };
 
-  update = (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
-    try {
-      const result =
-        this.service.update(
-          req.user!.restaurantId,
-          req.params.id as string,
-          req.body
-        );
+  /*
+   * ============================================================
+   * UPDATE TABLE
+   * ============================================================
+   *
+   * Updates table configuration:
+   *
+   * - table number
+   * - capacity
+   * - active
+   */
 
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
+  update = (req: Request, res: Response) => {
+    const restaurantId = req.user!.restaurantId;
+
+    const id = String(req.params.id);
+
+    const request = req.body as UpdateTableRequest;
+
+    const table = this.service.update(restaurantId, id, request);
+
+    return res.status(HTTP_STATUS.OK).json(table);
   };
 
-  changeStatus = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+  /*
+   * ============================================================
+   * DELETE TABLE
+   * ============================================================
+   *
+   * This is a soft delete.
+   *
+   * The service will:
+   *
+   *     active = 0
+   *
+   * The actual database row is preserved.
+   */
 
-  try {
+  delete = (req: Request, res: Response) => {
+    const restaurantId = req.user!.restaurantId;
 
-    const result =
-      this.service.changeStatus(
-        req.user!.restaurantId,
-        req.params.id as string,
-        req.body
-      );
+    const id = String(req.params.id);
 
-    res.json(result);
+    this.service.delete(restaurantId, id);
 
-  } catch (error) {
+    return res.status(HTTP_STATUS.NO_CONTENT).send();
+  };
 
-    next(error);
+  /*
+   * ============================================================
+   * CHANGE TABLE STATUS
+   * ============================================================
+   *
+   * PATCH /tables/:id/status
+   *
+   * The service is responsible for validating whether the
+   * requested state transition is legal.
+   */
 
-  }
+  changeStatus = (req: Request, res: Response) => {
+    const restaurantId = req.user!.restaurantId;
 
-};
+    const id = String(req.params.id);
 
-seatCustomer = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+    const request = req.body as UpdateTableStatusRequest;
 
-  try {
+    const table = this.service.changeStatus(restaurantId, id, request);
 
-    const result =
-      this.service.seatCustomer(
-        req.user!.restaurantId,
-        req.params.id as string,
-        req.body
-      );
+    return res.status(HTTP_STATUS.OK).json(table);
+  };
 
-    res.json(result);
+  /*
+   * ============================================================
+   * SEAT CUSTOMER
+   * ============================================================
+   *
+   * POST /tables/:id/seat
+   */
 
-  } catch (error) {
+  seatCustomer = (req: Request, res: Response) => {
+    const restaurantId = req.user!.restaurantId;
 
-    next(error);
+    const id = String(req.params.id);
 
-  }
+    const request = req.body as SeatCustomerRequest;
 
-};
+    const table = this.service.seatCustomer(restaurantId, id, request);
+
+    return res.status(HTTP_STATUS.OK).json(table);
+  };
 }

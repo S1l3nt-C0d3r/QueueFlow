@@ -4,17 +4,27 @@ import {
   UpdateMenuRequest,
 } from "../../types/menu";
 
+/*
+ * ============================================================
+ * MENU FORM
+ * ============================================================
+ */
+
 export interface MenuFormProps {
   loading: boolean;
 
   editingItem?: MenuResponse | null;
 
-  onSubmit: (
-    request: CreateMenuRequest | UpdateMenuRequest
-  ) => Promise<void>;
+  onSubmit: (request: CreateMenuRequest | UpdateMenuRequest) => Promise<void>;
 
   onCancel: () => void;
 }
+
+/*
+ * ============================================================
+ * MENU ITEM CARD
+ * ============================================================
+ */
 
 export interface MenuItemCardProps {
   item: MenuResponse;
@@ -24,6 +34,12 @@ export interface MenuItemCardProps {
   onDelete: (id: string) => Promise<void>;
 }
 
+/*
+ * ============================================================
+ * MENU GRID
+ * ============================================================
+ */
+
 export interface MenuGridProps {
   items: MenuResponse[];
 
@@ -32,10 +48,10 @@ export interface MenuGridProps {
   onDelete: (id: string) => Promise<void>;
 }
 
+/*
+ * ============================================================
+ * MENU INFORMATION
+ * ============================================================
+ */
+
 export interface MenuInfoProps {}
-
-export interface CategorySection {
-  category: string;
-
-  items: MenuResponse[];
-}

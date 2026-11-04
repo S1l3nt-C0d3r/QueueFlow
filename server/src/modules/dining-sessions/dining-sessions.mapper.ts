@@ -3,46 +3,58 @@ import {
   DiningSessionResponse,
 } from "./dining-sessions.types";
 
+/**
+ * ============================================================
+ * SINGLE SESSION
+ * ============================================================
+ */
+
 export function toDiningSessionResponse(
-  entity: DiningSessionEntity
+  session: DiningSessionEntity,
 ): DiningSessionResponse {
   return {
-    id: entity.id,
+    id: session.id,
 
-    restaurantId: entity.restaurantId,
+    restaurantId: session.restaurantId,
 
-    tableId: entity.tableId,
+    tableId: session.tableId,
 
-    queueId: entity.queueId,
+    queueId: session.queueId,
 
-    sessionToken: entity.sessionToken,
+    waiterStaffId: session.waiterStaffId,
 
-    joinCode: entity.joinCode,
+    sessionToken: session.sessionToken,
 
-    createdByName: entity.createdByName,
+    joinCode: session.joinCode,
 
-    createdByPhone: entity.createdByPhone,
+    createdByName: session.createdByName,
 
-    status: entity.status,
+    createdByPhone: session.createdByPhone,
 
-    source: entity.source,
+    status: session.status,
 
-    partySize: entity.partySize,
+    source: session.source,
 
-    startedAt: entity.startedAt,
+    partySize: session.partySize,
 
-    endedAt: entity.endedAt,
+    startedAt: session.startedAt,
 
-    createdAt: entity.createdAt,
+    endedAt: session.endedAt,
 
-    updatedAt: entity.updatedAt,
+    createdAt: session.createdAt,
+
+    updatedAt: session.updatedAt,
   };
 }
 
+/**
+ * ============================================================
+ * SESSION LIST
+ * ============================================================
+ */
+
 export function toDiningSessionResponseList(
-  entities: DiningSessionEntity[]
+  sessions: DiningSessionEntity[],
 ): DiningSessionResponse[] {
-  return entities.map(
-    toDiningSessionResponse
-  );
+  return sessions.map(toDiningSessionResponse);
 }

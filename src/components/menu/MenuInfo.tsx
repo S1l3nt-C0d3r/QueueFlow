@@ -1,88 +1,162 @@
-import {
-  BookOpen,
-  Database,
-  QrCode,
-  UtensilsCrossed,
-} from "lucide-react";
+import { BookOpen, Database, QrCode, CheckCircle2 } from "lucide-react";
 
 import { MenuInfoProps } from "./types";
 
 export default function MenuInfo({}: MenuInfoProps) {
   return (
-    <div className="rounded-2xl border border-orange-500/20 bg-gradient-to-br from-orange-500/10 to-pink-500/10 p-6 backdrop-blur-xl shadow-lg">
+    <div
+      className="
+        rounded-2xl
+        border
+        border-orange-500/20
+        bg-gradient-to-br
+        from-orange-500/10
+        to-pink-500/10
+        p-6
+        shadow-lg
+        backdrop-blur-xl
+      "
+    >
+      {/* ======================================================
+          HEADER
+          ====================================================== */}
 
-      <div className="flex items-center gap-3 mb-6">
-        <BookOpen className="h-6 w-6 text-orange-400" />
+      <div className="mb-6 flex items-center gap-3">
+        <BookOpen
+          className="
+            h-6
+            w-6
+            text-orange-400
+          "
+        />
 
-        <h3 className="text-xl font-bold text-white">
-          Menu Information
-        </h3>
+        <h3 className="text-xl font-bold text-white">Menu Information</h3>
       </div>
 
-      <div className="grid gap-5 md:grid-cols-3">
+      {/* ======================================================
+          INFORMATION CARDS
+          ====================================================== */}
 
-        {/* Database */}
+      <div
+        className="
+          grid
+          gap-5
+          md:grid-cols-3
+        "
+      >
+        {/* ====================================================
+            DATABASE
+            ==================================================== */}
 
-        <div className="rounded-xl border border-white/10 bg-white/5 p-5">
+        <div
+          className="
+            rounded-xl
+            border
+            border-white/10
+            bg-white/5
+            p-5
+          "
+        >
+          <div className="mb-3 flex items-center gap-3">
+            <Database
+              className="
+                h-5
+                w-5
+                text-cyan-400
+              "
+            />
 
-          <div className="flex items-center gap-3 mb-3">
-            <Database className="h-5 w-5 text-cyan-400" />
-
-            <h4 className="font-semibold text-white">
-              Local Database
-            </h4>
+            <h4 className="font-semibold text-white">Local Database</h4>
           </div>
 
-          <p className="text-sm leading-relaxed text-white/60">
-            Every menu item is stored in your restaurant's local
-            SQLite database through the backend. The frontend never
-            writes directly to the database.
+          <p
+            className="
+              text-sm
+              leading-relaxed
+              text-white/60
+            "
+          >
+            Every menu item is stored in your restaurant's local SQLite database
+            through the backend. The frontend never writes directly to the
+            database.
           </p>
-
         </div>
 
-        {/* QR Ordering */}
+        {/* ====================================================
+            CUSTOMER ORDERING
+            ==================================================== */}
 
-        <div className="rounded-xl border border-white/10 bg-white/5 p-5">
+        <div
+          className="
+            rounded-xl
+            border
+            border-white/10
+            bg-white/5
+            p-5
+          "
+        >
+          <div className="mb-3 flex items-center gap-3">
+            <QrCode
+              className="
+                h-5
+                w-5
+                text-green-400
+              "
+            />
 
-          <div className="flex items-center gap-3 mb-3">
-            <QrCode className="h-5 w-5 text-green-400" />
-
-            <h4 className="font-semibold text-white">
-              Customer Ordering
-            </h4>
+            <h4 className="font-semibold text-white">Customer Ordering</h4>
           </div>
 
-          <p className="text-sm leading-relaxed text-white/60">
-            Available menu items automatically appear in the customer
-            QR ordering experience. Unavailable items are hidden from
-            customers until they are enabled again.
+          <p
+            className="
+              text-sm
+              leading-relaxed
+              text-white/60
+            "
+          >
+            Only active and available menu items can be ordered by customers.
+            Items marked unavailable remain in the restaurant menu but cannot
+            currently be ordered.
           </p>
-
         </div>
 
-        {/* Categories */}
+        {/* ====================================================
+            AVAILABILITY
+            ==================================================== */}
 
-        <div className="rounded-xl border border-white/10 bg-white/5 p-5">
+        <div
+          className="
+            rounded-xl
+            border
+            border-white/10
+            bg-white/5
+            p-5
+          "
+        >
+          <div className="mb-3 flex items-center gap-3">
+            <CheckCircle2
+              className="
+                h-5
+                w-5
+                text-pink-400
+              "
+            />
 
-          <div className="flex items-center gap-3 mb-3">
-            <UtensilsCrossed className="h-5 w-5 text-pink-400" />
-
-            <h4 className="font-semibold text-white">
-              Categories
-            </h4>
+            <h4 className="font-semibold text-white">Availability</h4>
           </div>
 
-          <p className="text-sm leading-relaxed text-white/60">
-            Categories organize your menu for both staff and customers.
-            They are also used throughout the ordering workflow and
-            kitchen interface.
+          <p
+            className="
+              text-sm
+              leading-relaxed
+              text-white/60
+            "
+          >
+            Active controls whether an item is part of the restaurant's menu.
+            Available controls whether customers can currently order it.
           </p>
-
         </div>
-
       </div>
-
     </div>
   );
 }

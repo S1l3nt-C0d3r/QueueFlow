@@ -1,9 +1,10 @@
-import { useState, FormEvent } from "react";
+import { FormEvent, useState } from "react";
+
 import { motion } from "motion/react";
-import { Plus, Save } from "lucide-react";
+
+import { UserPlus } from "lucide-react";
 
 import { StaffFormProps } from "./types";
-import { RoleId } from "../../types/common";
 
 export default function StaffForm({
   loading,
@@ -11,229 +12,464 @@ export default function StaffForm({
   onCancel,
 }: StaffFormProps) {
   const [staffNumber, setStaffNumber] = useState("");
+
   const [displayName, setDisplayName] = useState("");
+
   const [email, setEmail] = useState("");
-  const [roleId, setRoleId] = useState<RoleId>("waiter");
+
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+
+  const [roleId, setRoleId] = useState<"admin" | "waiter" | "receptionist">(
+    "waiter",
+  );
 
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  /*
+   * ============================================================
+   * SUBMIT
+   * ============================================================
+   */
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
 
     setError(null);
 
-    // UX validation only.
-    // Backend remains the source of truth.
+    const normalizedStaffNumber = staffNumber.trim();
 
-    if (!staffNumber.trim()) {
-      setError("Staff Number is required.");
+    const normalizedDisplayName = displayName.trim();
+
+    const normalizedEmail = email.trim();
+
+    if (!normalizedStaffNumber) {
+      setError("Staff number is required.");
+
       return;
     }
 
-    if (!displayName.trim()) {
-      setError("Display Name is required.");
+    if (!normalizedDisplayName) {
+      setError("Display name is required.");
+
       return;
     }
 
     if (!password) {
       setError("Password is required.");
-      return;
-    }
 
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
       return;
     }
 
     try {
       await onSubmit({
-        staffNumber,
-        displayName,
-        email: email || undefined,
+        staffNumber: normalizedStaffNumber,
+
+        displayName: normalizedDisplayName,
+
+        email: normalizedEmail || undefined,
+
         password,
+
         roleId,
       });
-
-      setStaffNumber("");
-      setDisplayName("");
-      setEmail("");
-      setRoleId("waiter");
-      setPassword("");
-      setConfirmPassword("");
-    } catch (err: any) {
-      setError(err.message ?? "Failed to create staff member.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Unable to create staff member.",
+      );
     }
   }
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      className="backdrop-blur-xl bg-gradient-to-br from-green-500/10 to-emerald-500/10 border border-green-500/30 p-8 rounded-2xl shadow-2xl"
+      initial={{
+        opacity: 0,
+        y: -15,
+      }}
+      animate={{
+        opacity: 1,
+        y: 0,
+      }}
+      exit={{
+        opacity: 0,
+        y: -15,
+      }}
+      className="
+        rounded-2xl
+        border
+        border-green-500/20
+        bg-gradient-to-br
+        from-green-500/10
+        to-emerald-500/10
+        p-6
+        shadow-xl
+        backdrop-blur-xl
+      "
     >
-      <div className="flex items-center gap-3 mb-6">
-        <Plus className="h-6 w-6 text-green-400" />
+      {/* ======================================================
+          HEADER
+          ====================================================== */}
 
-        <h3 className="text-xl font-bold text-white">
-          Create New Staff Member
-        </h3>
+      <div className="mb-6 flex items-center gap-3">
+        <div
+          className="
+            flex
+            h-10
+            w-10
+            items-center
+            justify-center
+            rounded-lg
+            bg-gradient-to-br
+            from-green-500
+            to-emerald-600
+          "
+        >
+          <UserPlus
+            className="
+              h-5
+              w-5
+              text-white
+            "
+          />
+        </div>
+
+        <div>
+          <h3 className="text-xl font-bold text-white">Add Staff Member</h3>
+
+          <p className="mt-1 text-sm text-white/50">
+            Create a new staff account for this restaurant.
+          </p>
+        </div>
       </div>
 
+      {/* ======================================================
+          ERROR
+          ====================================================== */}
+
       {error && (
-        <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-300">
+        <div
+          className="
+            mb-5
+            rounded-lg
+            border
+            border-red-500/30
+            bg-red-500/10
+            px-4
+            py-3
+            text-sm
+            text-red-300
+          "
+        >
           {error}
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit}
-        className="space-y-5"
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      {/* ======================================================
+          FORM
+          ====================================================== */}
+
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div
+          className="
+            grid
+            grid-cols-1
+            gap-5
+            md:grid-cols-2
+          "
+        >
+          {/* ==================================================
+              STAFF NUMBER
+              ================================================== */}
 
           <div>
-            <label className="block mb-2 text-sm font-semibold text-white/80">
+            <label
+              htmlFor="staff-number"
+              className="
+                mb-2
+                block
+                text-sm
+                font-semibold
+                text-white/80
+              "
+            >
               Staff Number
             </label>
 
             <input
+              id="staff-number"
+              type="text"
               value={staffNumber}
-              onChange={(e) => setStaffNumber(e.target.value)}
-              placeholder="1001"
-              className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-2.5 text-white outline-none focus:border-green-500/50"
+              onChange={(event) => setStaffNumber(event.target.value)}
+              placeholder="e.g. W001"
+              autoComplete="off"
+              disabled={loading}
+              required
+              className="
+                w-full
+                rounded-lg
+                border
+                border-white/10
+                bg-white/5
+                px-4
+                py-3
+                text-white
+                outline-none
+                placeholder:text-white/25
+                focus:border-green-500/40
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+              "
             />
           </div>
 
+          {/* ==================================================
+              DISPLAY NAME
+              ================================================== */}
+
           <div>
-            <label className="block mb-2 text-sm font-semibold text-white/80">
+            <label
+              htmlFor="staff-name"
+              className="
+                mb-2
+                block
+                text-sm
+                font-semibold
+                text-white/80
+              "
+            >
               Display Name
             </label>
 
             <input
+              id="staff-name"
+              type="text"
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="John Doe"
-              className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-2.5 text-white outline-none focus:border-green-500/50"
+              onChange={(event) => setDisplayName(event.target.value)}
+              placeholder="e.g. Rahul Sharma"
+              autoComplete="name"
+              disabled={loading}
+              required
+              className="
+                w-full
+                rounded-lg
+                border
+                border-white/10
+                bg-white/5
+                px-4
+                py-3
+                text-white
+                outline-none
+                placeholder:text-white/25
+                focus:border-green-500/40
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+              "
             />
           </div>
 
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* ==================================================
+              EMAIL
+              ================================================== */}
 
           <div>
-            <label className="block mb-2 text-sm font-semibold text-white/80">
-              Email (Optional)
+            <label
+              htmlFor="staff-email"
+              className="
+                mb-2
+                block
+                text-sm
+                font-semibold
+                text-white/80
+              "
+            >
+              Email
+              <span className="ml-1 text-white/30">(optional)</span>
             </label>
 
             <input
+              id="staff-email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="john@example.com"
-              className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-2.5 text-white outline-none focus:border-green-500/50"
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="staff@example.com"
+              autoComplete="email"
+              disabled={loading}
+              className="
+                w-full
+                rounded-lg
+                border
+                border-white/10
+                bg-white/5
+                px-4
+                py-3
+                text-white
+                outline-none
+                placeholder:text-white/25
+                focus:border-green-500/40
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+              "
             />
           </div>
 
+          {/* ==================================================
+              ROLE
+              ================================================== */}
+
           <div>
-            <label className="block mb-2 text-sm font-semibold text-white/80">
+            <label
+              htmlFor="staff-role"
+              className="
+                mb-2
+                block
+                text-sm
+                font-semibold
+                text-white/80
+              "
+            >
               Role
             </label>
 
             <select
+              id="staff-role"
               value={roleId}
-              onChange={(e) =>
-                setRoleId(e.target.value as RoleId)
+              onChange={(event) =>
+                setRoleId(
+                  event.target.value as "admin" | "waiter" | "receptionist",
+                )
               }
-              className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-2.5 text-white outline-none focus:border-green-500/50"
+              disabled={loading}
+              className="
+                w-full
+                rounded-lg
+                border
+                border-white/10
+                bg-zinc-900
+                px-4
+                py-3
+                text-white
+                outline-none
+                focus:border-green-500/40
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+              "
             >
-              <option value="waiter">
-                Waiter
-              </option>
+              <option value="waiter">Waiter</option>
 
-              <option value="receptionist">
-                Receptionist
-              </option>
+              <option value="receptionist">Receptionist</option>
 
-              <option value="admin">
-                Admin
-              </option>
+              <option value="admin">Admin</option>
             </select>
           </div>
 
-        </div>
+          {/* ==================================================
+              PASSWORD
+              ================================================== */}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
-          <div>
-            <label className="block mb-2 text-sm font-semibold text-white/80">
-              Password
+          <div className="md:col-span-2">
+            <label
+              htmlFor="staff-password"
+              className="
+                mb-2
+                block
+                text-sm
+                font-semibold
+                text-white/80
+              "
+            >
+              Initial Password
             </label>
 
             <input
+              id="staff-password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-2.5 text-white outline-none focus:border-green-500/50"
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Enter initial password"
+              autoComplete="new-password"
+              disabled={loading}
+              required
+              className="
+                w-full
+                rounded-lg
+                border
+                border-white/10
+                bg-white/5
+                px-4
+                py-3
+                text-white
+                outline-none
+                placeholder:text-white/25
+                focus:border-green-500/40
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+              "
             />
+
+            <p className="mt-2 text-xs text-white/30">
+              The staff member can use this password when signing into the
+              restaurant system.
+            </p>
           </div>
-
-          <div>
-            <label className="block mb-2 text-sm font-semibold text-white/80">
-              Confirm Password
-            </label>
-
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) =>
-                setConfirmPassword(e.target.value)
-              }
-              placeholder="••••••••"
-              className="w-full rounded-lg border border-white/20 bg-white/5 px-4 py-2.5 text-white outline-none focus:border-green-500/50"
-            />
-          </div>
-
         </div>
+
+        {/* ======================================================
+            ACTIONS
+            ====================================================== */}
 
         <div className="flex gap-3 pt-2">
-
           <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
             type="submit"
+            whileHover={{
+              scale: 1.01,
+            }}
+            whileTap={{
+              scale: 0.98,
+            }}
             disabled={loading}
-            className="flex-1 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 py-3 font-bold text-white shadow-lg transition-all disabled:cursor-not-allowed disabled:opacity-50"
+            className="
+              flex
+              flex-1
+              items-center
+              justify-center
+              rounded-lg
+              bg-gradient-to-r
+              from-green-500
+              to-emerald-600
+              py-3
+              font-bold
+              text-white
+              shadow-lg
+              transition-all
+              hover:opacity-90
+              disabled:cursor-not-allowed
+              disabled:opacity-50
+            "
           >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                Creating...
-              </span>
-            ) : (
-              <span className="flex items-center justify-center gap-2">
-                <Save className="h-5 w-5" />
-                Create Staff
-              </span>
-            )}
+            {loading ? "Creating..." : "Create Staff"}
           </motion.button>
 
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+          <button
             type="button"
             onClick={onCancel}
-            className="flex-1 rounded-lg border border-white/20 bg-white/5 py-3 font-bold text-white transition-all hover:bg-white/10"
+            disabled={loading}
+            className="
+              flex-1
+              rounded-lg
+              border
+              border-white/10
+              bg-white/5
+              py-3
+              font-semibold
+              text-white
+              transition
+              hover:bg-white/10
+              disabled:cursor-not-allowed
+              disabled:opacity-50
+            "
           >
             Cancel
-          </motion.button>
-
+          </button>
         </div>
-
       </form>
     </motion.div>
   );

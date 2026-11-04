@@ -68,27 +68,27 @@ export const PERMISSION_LIST = Object.values(PERMISSIONS);
 
 const roles = [
   {
-    id: "admin",
+    id: "role-admin",
     name: SYSTEM_ROLES.ADMIN,
     description: "Restaurant Administrator",
   },
   {
-    id: "manager",
+    id: "role-manager",
     name: SYSTEM_ROLES.MANAGER,
     description: "Restaurant Manager",
   },
   {
-    id: "waiter",
+    id: "role-waiter",
     name: SYSTEM_ROLES.WAITER,
     description: "Wait Staff",
   },
   {
-    id: "receptionist",
+    id: "role-receptionist",
     name: SYSTEM_ROLES.RECEPTIONIST,
     description: "Front Desk",
   },
   {
-    id: "cashier",
+    id: "role-cashier",
     name: SYSTEM_ROLES.CASHIER,
     description: "Cashier",
   },
@@ -116,11 +116,11 @@ export const AUDIT_ACTIONS = {
 // ==============================================
 
 export const ROLE_IDS = {
-  ADMIN: "admin",
-  MANAGER: "manager",
-  WAITER: "waiter",
-  RECEPTIONIST: "receptionist",
-  CASHIER: "cashier",
+  ADMIN: "role-admin",
+  MANAGER: "rolemanager",
+  WAITER: "role-waiter",
+  RECEPTIONIST: "role-receptionist",
+  CASHIER: "role-cashier",
 } as const;
 
 export type RoleId =

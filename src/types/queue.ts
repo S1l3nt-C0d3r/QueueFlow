@@ -7,17 +7,26 @@ export type QueueStatus =
 
 export interface QueueResponse {
   id: string;
-  customerName: string;
-  customerPhone: string;
-  partySize: number;
-  status: QueueStatus;
-  estimatedWaitTime?: number;
-  notes?: string;
 
-  tableId?: string;
+  tokenNumber: number;
+
+  customerName: string;
+
+  customerPhone: string | null;
+
+  partySize: number;
+
+  status: QueueStatus;
+
+  tableId: string | null;
+
+  notes: string | null;
 
   createdAt: string;
+
   updatedAt: string;
+
+  position?: number;
 }
 
 export interface CreateQueueRequest {

@@ -1,7 +1,4 @@
-import {
-  randomBytes,
-  randomUUID,
-} from "crypto";
+import { randomUUID } from "crypto";
 
 import { db } from "../../database/connection";
 
@@ -11,195 +8,276 @@ import {
   UpdateTableRequest,
 } from "./tables.types";
 
-import {
-  TABLE_STATUS,
-} from "../../shared/constants";
+import { TABLE_STATUS } from "../../shared/constants";
 
 export class TablesRepository {
+  /*
+   * ============================================================
+   * FIND ALL TABLES
+   * ============================================================
+   */
 
-  findAll(
-    restaurantId: string
-  ): TableEntity[] {
-
-    return db.prepare(`
+  findAll(restaurantId: string): TableEntity[] {
+    return db
+      .prepare(
+        `
       SELECT *
       FROM tables
       WHERE restaurantId = ?
       ORDER BY tableNumber ASC
-    `).all(
-      restaurantId
-    ) as TableEntity[];
-
+    `,
+      )
+      .all(restaurantId) as TableEntity[];
   }
 
-  findById(
-    restaurantId: string,
-    id: string
-  ): TableEntity | undefined {
+  /*
+   * ============================================================
+   * FIND TABLE BY ID
+   * ============================================================
+   */
 
-    return db.prepare(`
+  findById(restaurantId: string, id: string): TableEntity | undefined {
+    return db
+      .prepare(
+        `
       SELECT *
       FROM tables
       WHERE restaurantId = ?
       AND id = ?
-    `).get(
-      restaurantId,
-      id
-    ) as TableEntity | undefined;
-
+    `,
+      )
+      .get(restaurantId, id) as TableEntity | undefined;
   }
 
-  findByToken(
-  restaurantId: string,
-  tableToken: string
-): TableEntity | undefined {
+  /*
+   * ============================================================
+   * FIND TABLE BY TOKEN
+   * ============================================================
+   *
+   * Only active tables can be resolved through their QR token.
+   */
 
-  return db.prepare(`
-    SELECT *
-    FROM tables
-    WHERE restaurantId = ?
+  findByToken(
+    restaurantId: string,
+    tableToken: string,
+  ): TableEntity | undefined {
+    return db
+      .prepare(
+        `
+      SELECT *
+      FROM tables
+      WHERE restaurantId = ?
       AND tableToken = ?
       AND active = 1
-  `).get(
-    restaurantId,
-    tableToken
-  ) as TableEntity | undefined;
+    `,
+      )
+      .get(restaurantId, tableToken) as TableEntity | undefined;
+  }
 
-}
+  /*
+   * ============================================================
+   * FIND TABLE BY TABLE NUMBER
+   * ============================================================
+   */
 
   findByTableNumber(
     restaurantId: string,
-    tableNumber: string
+    tableNumber: string,
   ): TableEntity | undefined {
-
-    return db.prepare(`
+    return db
+      .prepare(
+        `
       SELECT *
       FROM tables
       WHERE restaurantId = ?
       AND tableNumber = ?
-    `).get(
-      restaurantId,
-      tableNumber
-    ) as TableEntity | undefined;
-
+    `,
+      )
+      .get(restaurantId, tableNumber) as TableEntity | undefined;
   }
 
- create(
-  restaurantId: string,
-  request: CreateTableRequest
-): TableEntity {
+  /*
+   * ============================================================
+   * CREATE TABLE
+   * ============================================================
+   */
 
-  const id = randomUUID();
+  create(restaurantId: string, request: CreateTableRequest): TableEntity {
+    const id = randomUUID();
 
-  const tableToken = randomUUID();
+    const tableToken = randomUUID();
 
-  const now =
-    new Date().toISOString();
+    const now = new Date().toISOString();
 
-  db.prepare(`
-    INSERT INTO tables
-    (
+    db.prepare(
+      `
+      INSERT INTO tables
+      (
+        id,
+        restaurantId,
+        tableNumber,
+        capacity,
+        status,
+        tableToken,
+        currentQueueId,
+        active,
+        createdAt,
+        updatedAt
+      )
+      VALUES
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
       id,
       restaurantId,
-      tableNumber,
-      capacity,
-      status,
+      request.tableNumber,
+      request.capacity,
+      TABLE_STATUS.AVAILABLE,
       tableToken,
-      currentQueueId,
-      active,
-      createdAt,
-      updatedAt
-    )
-    VALUES
-    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    restaurantId,
-    request.tableNumber,
-    request.capacity,
-    TABLE_STATUS.AVAILABLE,
-    id,
-    null,
-    1,
-    now,
-    now
-  );
+      null,
+      1,
+      now,
+      now,
+    );
 
-  return this.findById(
-    restaurantId,
-    id
-  )!;
+    return this.findById(restaurantId, id)!;
+  }
 
-}
+  /*
+   * ============================================================
+   * UPDATE TABLE
+   * ============================================================
+   *
+   * Used for:
+   *
+   * - table number
+   * - capacity
+   * - active state
+   */
 
-  update(
-    restaurantId: string,
-    id: string,
-    request: UpdateTableRequest
-  ): void {
+  update(restaurantId: string, id: string, request: UpdateTableRequest): void {
+    const fields: string[] = [];
+    const values: (string | number)[] = [];
 
-    db.prepare(`
+    if (request.tableNumber !== undefined) {
+      fields.push("tableNumber = ?");
+      values.push(request.tableNumber);
+    }
+
+    if (request.capacity !== undefined) {
+      fields.push("capacity = ?");
+      values.push(request.capacity);
+    }
+
+    if (request.active !== undefined) {
+      fields.push("active = ?");
+      values.push(request.active ? 1 : 0);
+    }
+
+    if (fields.length === 0) {
+      return;
+    }
+
+    fields.push("updatedAt = ?");
+    values.push(new Date().toISOString());
+
+    values.push(restaurantId, id);
+
+    db.prepare(
+      `
+    UPDATE tables
+    SET ${fields.join(", ")}
+    WHERE restaurantId = ?
+    AND id = ?
+  `,
+    ).run(...values);
+  }
+  /*
+   * ============================================================
+   * SOFT DELETE TABLE
+   * ============================================================
+   *
+   * We intentionally DO NOT physically delete the row.
+   *
+   * Tables can be referenced by:
+   *
+   * - dining sessions
+   * - orders
+   * - historical records
+   * - QR tokens
+   *
+   * Therefore deletion means:
+   *
+   *     active = 0
+   *
+   * The existing record remains available for historical data.
+   *
+   * The QR token will also stop working because findByToken()
+   * only resolves active tables.
+   */
+
+  delete(restaurantId: string, id: string): void {
+    db.prepare(
+      `
       UPDATE tables
       SET
-        tableNumber = ?,
-        capacity = ?,
-        active = ?,
+        active = 0,
         updatedAt = ?
       WHERE restaurantId = ?
       AND id = ?
-    `).run(
-      request.tableNumber,
-      request.capacity,
-      request.active ? 1 : 0,
+    `,
+    ).run(new Date().toISOString(), restaurantId, id);
+  }
+
+  /*
+   * ============================================================
+   * UPDATE TABLE STATUS
+   * ============================================================
+   */
+
+  updateStatus(
+    restaurantId: string,
+    id: string,
+    status: string,
+    currentQueueId?: string | null,
+  ): void {
+    db.prepare(
+      `
+      UPDATE tables
+      SET
+        status = ?,
+        currentQueueId = ?,
+        updatedAt = ?
+      WHERE restaurantId = ?
+      AND id = ?
+    `,
+    ).run(
+      status,
+      currentQueueId ?? null,
       new Date().toISOString(),
       restaurantId,
-      id
+      id,
     );
-
   }
-  updateStatus(
-  restaurantId: string,
-  id: string,
-  status: string,
-  currentQueueId?: string | null
-): void {
 
-  db.prepare(`
-    UPDATE tables
-    SET
-      status = ?,
-      currentQueueId = ?,
-      updatedAt = ?
-    WHERE restaurantId = ?
-      AND id = ?
-  `).run(
-    status,
-    currentQueueId ?? null,
-    new Date().toISOString(),
-    restaurantId,
-    id
-  );
+  /*
+   * ============================================================
+   * FIND AVAILABLE TABLE
+   * ============================================================
+   */
 
-}
-
-findAvailable(
-  restaurantId: string,
-  id: string
-): TableEntity | undefined {
-
-  return db.prepare(`
-    SELECT *
-    FROM tables
-    WHERE restaurantId = ?
+  findAvailable(restaurantId: string, id: string): TableEntity | undefined {
+    return db
+      .prepare(
+        `
+      SELECT *
+      FROM tables
+      WHERE restaurantId = ?
       AND id = ?
       AND status = ?
       AND active = 1
-  `).get(
-    restaurantId,
-    id,
-    TABLE_STATUS.AVAILABLE
-  ) as TableEntity | undefined;
-
-}
-
+    `,
+      )
+      .get(restaurantId, id, TABLE_STATUS.AVAILABLE) as TableEntity | undefined;
+  }
 }

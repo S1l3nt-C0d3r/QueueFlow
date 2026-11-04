@@ -1,7 +1,10 @@
-import {
-  SessionSource,
-  SessionStatus,
-} from "../../shared/constants";
+import { SessionSource, SessionStatus } from "../../shared/constants";
+
+/**
+ * ============================================================
+ * DINING SESSION ENTITY
+ * ============================================================
+ */
 
 export interface DiningSessionEntity {
   id: string;
@@ -12,6 +15,13 @@ export interface DiningSessionEntity {
 
   queueId: string | null;
 
+  /**
+   * Staff member responsible for this dining session.
+   *
+   * This is normally the waiter who seats/starts the session.
+   */
+  waiterStaffId: string;
+
   sessionToken: string;
 
   joinCode: string;
@@ -35,15 +45,27 @@ export interface DiningSessionEntity {
   updatedAt: string;
 }
 
+/**
+ * ============================================================
+ * CREATE DINING SESSION
+ * ============================================================
+ *
+ * The waiter/staff ID is NOT supplied by the customer.
+ *
+ * It is taken from the authenticated staff member in the
+ * controller/service layer.
+ */
+
 export interface CreateDiningSessionRequest {
   /**
    * Permanent QR token stored against the table.
+   *
    * Used for walk-ins, reservations and queue customers.
    */
   tableToken: string;
 
   /**
-   * Required only when source === QUEUE
+   * Required only when source === QUEUE.
    */
   queueId?: string;
 
@@ -51,15 +73,23 @@ export interface CreateDiningSessionRequest {
 
   customer: {
     name: string;
+
     phone: string;
   };
 
   /**
    * For walk-ins this can be entered manually.
-   * For queue customers we'll populate this from the queue entry.
+   *
+   * For queue customers this is populated from the queue entry.
    */
   partySize: number;
 }
+
+/**
+ * ============================================================
+ * JOIN DINING SESSION
+ * ============================================================
+ */
 
 export interface JoinDiningSessionRequest {
   tableId: string;
@@ -68,9 +98,16 @@ export interface JoinDiningSessionRequest {
 
   customer: {
     name: string;
+
     phone: string;
   };
 }
+
+/**
+ * ============================================================
+ * DINING SESSION RESPONSE
+ * ============================================================
+ */
 
 export interface DiningSessionResponse {
   id: string;
@@ -81,6 +118,8 @@ export interface DiningSessionResponse {
 
   queueId: string | null;
 
+  waiterStaffId: string;
+
   sessionToken: string;
 
   joinCode: string;
@@ -104,15 +143,30 @@ export interface DiningSessionResponse {
   updatedAt: string;
 }
 
+/**
+ * ============================================================
+ * RESOLVED CREATE REQUEST
+ * ============================================================
+ *
+ * This is the internal representation after the service has
+ * validated the table / queue information.
+ */
+
 export interface ResolvedDiningSessionRequest {
   tableId: string;
 
   queueId?: string;
 
+  /**
+   * Responsible waiter/staff member for this session.
+   */
+  waiterStaffId: string;
+
   source: SessionSource;
 
   customer: {
     name: string;
+
     phone: string;
   };
 

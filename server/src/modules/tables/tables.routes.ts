@@ -1,67 +1,119 @@
 import { Router } from "express";
 
-import { TablesController } from "./tables.controller";
-
 import { authenticate } from "../../middleware/auth";
 import { requireRole } from "../../middleware/authorize";
 
-import {
-  ROLE_IDS,
-} from "../../shared/constants";
+import { TablesController } from "./tables.controller";
 
 const router = Router();
 
-const controller =
-  new TablesController();
+const controller = new TablesController();
+
+/*
+ * ============================================================
+ * AUTHENTICATION
+ * ============================================================
+ *
+ * Every table operation requires an authenticated staff member.
+ *
+ * restaurantId is obtained from req.user.restaurantId.
+ */
 
 router.use(authenticate);
 
-router.get(
-  "/",
-  controller.getAll
-);
+/*
+ * ============================================================
+ * GET ALL TABLES
+ * ============================================================
+ *
+ * All authenticated restaurant staff can view the table layout.
+ *
+ * This is required by:
+ *
+ * - Admin
+ * - Manager
+ * - Receptionist
+ * - Waiter
+ */
 
-router.get(
-  "/:id",
-  controller.getById
-);
+router.get("/", controller.getAll);
 
-router.post(
-  "/",
-  requireRole(
-    ROLE_IDS.ADMIN,
-    ROLE_IDS.MANAGER
-  ),
-  controller.create
-);
+/*
+ * ============================================================
+ * GET TABLE BY ID
+ * ============================================================
+ */
 
-router.put(
-  "/:id",
-  requireRole(
-    ROLE_IDS.ADMIN,
-    ROLE_IDS.MANAGER
-  ),
-  controller.update
-);
+router.get("/:id", controller.getById);
+
+/*
+ * ============================================================
+ * CREATE TABLE
+ * ============================================================
+ *
+ * Only Admin and Manager can create restaurant tables.
+ */
+
+router.post("/", requireRole("admin", "manager"), controller.create);
+
+/*
+ * ============================================================
+ * UPDATE TABLE
+ * ============================================================
+ *
+ * Used for:
+ *
+ * - table number
+ * - capacity
+ * - active state
+ */
+
+router.put("/:id", requireRole("admin", "manager"), controller.update);
+
+/*
+ * ============================================================
+ * DELETE TABLE
+ * ============================================================
+ *
+ * This is a soft delete.
+ *
+ * Only Admin and Manager can remove a table from active use.
+ */
+
+router.delete("/:id", requireRole("admin", "manager"), controller.delete);
+
+/*
+ * ============================================================
+ * CHANGE TABLE STATUS
+ * ============================================================
+ *
+ * Status transitions can be required by several staff roles.
+ *
+ * The service validates whether the requested transition is
+ * actually legal.
+ */
 
 router.patch(
   "/:id/status",
-  requireRole(
-    ROLE_IDS.ADMIN,
-    ROLE_IDS.MANAGER,
-    ROLE_IDS.RECEPTIONIST
-  ),
-  controller.changeStatus
+  requireRole("admin", "manager", "receptionist", "waiter"),
+  controller.changeStatus,
 );
+
+/*
+ * ============================================================
+ * SEAT CUSTOMER
+ * ============================================================
+ *
+ * Seating a customer is an operational action rather than
+ * table configuration.
+ *
+ * Receptionist, Manager and Admin can perform it.
+ */
 
 router.post(
   "/:id/seat",
-  requireRole(
-    ROLE_IDS.ADMIN,
-    ROLE_IDS.MANAGER,
-    ROLE_IDS.RECEPTIONIST
-  ),
-  controller.seatCustomer
+  requireRole("admin", "manager", "receptionist"),
+  controller.seatCustomer,
 );
 
 export default router;

@@ -1,5 +1,11 @@
 import { OrderStatus, OrderCreatorType } from "../../shared/constants";
 
+/**
+ * ============================================================
+ * ORDER ENTITY
+ * ============================================================
+ */
+
 export interface OrderEntity {
   id: string;
 
@@ -8,6 +14,16 @@ export interface OrderEntity {
   sessionId: string;
 
   tableId: string;
+
+  /**
+   * Staff member responsible for this order.
+   *
+   * For customer orders this comes from the dining session's
+   * waiterStaffId.
+   *
+   * For staff orders this is the authenticated staff member.
+   */
+  waiterId: string;
 
   status: OrderStatus;
 
@@ -23,6 +39,12 @@ export interface OrderEntity {
 
   updatedAt: string;
 }
+
+/**
+ * ============================================================
+ * ORDER ITEM ENTITY
+ * ============================================================
+ */
 
 export interface OrderItemEntity {
   id: string;
@@ -50,25 +72,141 @@ export interface OrderItemEntity {
   createdAt: string;
 }
 
+/**
+ * ============================================================
+ * ORDER ITEM REQUEST
+ * ============================================================
+ */
+
 export interface SubmitOrderItemRequest {
-    menuItemId: string;
-    quantity: number;
-    notes?: string;
+  menuItemId: string;
+
+  quantity: number;
+
+  notes?: string;
 }
+
+/**
+ * ============================================================
+ * STAFF / INTERNAL ORDER REQUEST
+ * ============================================================
+ *
+ * Used by waiter/admin/manager ordering.
+ *
+ * The controller/service supplies:
+ *
+ * - createdByType
+ * - createdById
+ * - takenByStaffId
+ */
 
 export interface SubmitOrderRequest {
-    sessionId: string;
+  sessionId: string;
 
-    items: SubmitOrderItemRequest[];
+  items: SubmitOrderItemRequest[];
 
-    createdByType: OrderCreatorType;
-    createdById: string;
-    takenByStaffId?: string;
+  createdByType: OrderCreatorType;
+
+  createdById: string;
+
+  takenByStaffId?: string;
 }
+
+/**
+ * ============================================================
+ * INTERNAL ORDER CREATE REQUEST
+ * ============================================================
+ *
+ * Used by OrdersRepository.create().
+ *
+ * This represents the already-resolved order header.
+ *
+ * The service is responsible for calculating these values.
+ */
+
+export interface CreateOrderRequest {
+  sessionId: string;
+
+  tableId: string;
+
+  status: OrderStatus;
+
+  subtotal: number;
+
+  discount: number;
+
+  tax: number;
+
+  grandTotal: number;
+}
+
+/**
+ * ============================================================
+ * ORDER TOTALS
+ * ============================================================
+ *
+ * Used when calculating totals for a dining session.
+ */
+
+export interface OrderTotals {
+  subtotal: number;
+
+  discount: number;
+
+  tax: number;
+
+  grandTotal: number;
+}
+
+/**
+ * ============================================================
+ * CUSTOMER ORDER REQUEST
+ * ============================================================
+ *
+ * The customer does NOT send:
+ *
+ * - createdByType
+ * - createdById
+ * - waiterId
+ *
+ * These are resolved by the backend.
+ */
+
+export interface SubmitCustomerOrderRequest {
+  sessionId: string;
+
+  sessionToken: string;
+
+  items: SubmitOrderItemRequest[];
+}
+
+/**
+ * ============================================================
+ * CUSTOMER ORDERS QUERY
+ * ============================================================
+ */
+
+export interface GetCustomerOrdersRequest {
+  sessionId: string;
+
+  sessionToken: string;
+}
+
+/**
+ * ============================================================
+ * ORDER STATUS
+ * ============================================================
+ */
 
 export interface UpdateOrderStatusRequest {
   status: OrderStatus;
 }
+
+/**
+ * ============================================================
+ * RESPONSES
+ * ============================================================
+ */
 
 export interface OrderResponse {
   id: string;
@@ -76,6 +214,11 @@ export interface OrderResponse {
   sessionId: string;
 
   tableId: string;
+
+  /**
+   * Responsible waiter for this order.
+   */
+  waiterId: string;
 
   status: OrderStatus;
 
@@ -90,7 +233,15 @@ export interface OrderResponse {
   createdAt: string;
 
   updatedAt: string;
+
+  items: OrderItemResponse[];
 }
+
+/**
+ * ============================================================
+ * ORDER ITEM RESPONSE
+ * ============================================================
+ */
 
 export interface OrderItemResponse {
   id: string;
@@ -114,16 +265,20 @@ export interface OrderItemResponse {
   notes: string | null;
 }
 
+/**
+ * ============================================================
+ * EXISTING ORDER-ITEM REQUEST
+ * ============================================================
+ */
+
 export interface CreateOrderItemRequest {
+  quantity: number;
 
-    quantity: number;
+  notes?: string;
 
-    notes?: string;
+  createdByType: OrderCreatorType;
 
-    createdByType: OrderCreatorType;
+  createdById: string;
 
-    createdById: string;
-
-    takenByStaffId?: string;
-
+  takenByStaffId?: string;
 }

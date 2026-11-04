@@ -1,7 +1,10 @@
-import {
-  BillStatus,
-  PaymentMethod,
-} from "../../shared/constants";
+import { BillStatus, PaymentMethod } from "../../shared/constants";
+
+/**
+ * ============================================================
+ * BILL ENTITY
+ * ============================================================
+ */
 
 export interface BillEntity {
   id: string;
@@ -31,11 +34,56 @@ export interface BillEntity {
   updatedAt: string;
 }
 
-export interface CreateBillRequest {
-    sessionId: string;
+/**
+ * ============================================================
+ * STAFF BILL REQUEST
+ * ============================================================
+ *
+ * Used by Admin / Manager / Cashier.
+ */
 
-    createdByStaffId: string;
+export interface CreateBillRequest {
+  sessionId: string;
+
+  createdByStaffId: string;
 }
+
+/**
+ * ============================================================
+ * CUSTOMER BILL REQUEST
+ * ============================================================
+ *
+ * The customer does not provide:
+ *
+ * - restaurantId
+ * - createdByStaffId
+ *
+ * The backend derives the restaurant from the dining session.
+ */
+
+export interface CreateCustomerBillRequest {
+  sessionId: string;
+
+  sessionToken: string;
+}
+
+/**
+ * ============================================================
+ * CUSTOMER BILL LOOKUP
+ * ============================================================
+ */
+
+export interface GetCustomerBillRequest {
+  sessionId: string;
+
+  sessionToken: string;
+}
+
+/**
+ * ============================================================
+ * BILL RESPONSE
+ * ============================================================
+ */
 
 export interface BillResponse {
   id: string;
@@ -59,4 +107,19 @@ export interface BillResponse {
   createdAt: string;
 
   updatedAt: string;
+}
+
+/**
+ * ============================================================
+ * PAYMENT REQUEST
+ * ============================================================
+ *
+ * Retained for the existing staff/payment flow.
+ *
+ * Customer payment will be handled separately once we decide
+ * the actual payment mechanism.
+ */
+
+export interface PayBillRequest {
+  paymentMethod: PaymentMethod;
 }

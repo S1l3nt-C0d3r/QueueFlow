@@ -6,37 +6,49 @@ import {
   UpdateMenuRequest,
 } from "../types/menu";
 
-class MenuService {
-  async getAll(): Promise<MenuResponse[]> {
+export const menuService = {
+  /**
+   * ============================================================
+   * GET ALL MENU ITEMS
+   * ============================================================
+   */
+  getAll(): Promise<MenuResponse[]> {
     return api.get<MenuResponse[]>("/menu");
-  }
+  },
 
-  async getById(id: string): Promise<MenuResponse> {
-    return api.get<MenuResponse>(`/menu/${id}`);
-  }
+  /**
+   * ============================================================
+   * GET MENU ITEM BY ID
+   * ============================================================
+   */
+  getById(id: string): Promise<MenuResponse> {
+    return api.get<MenuResponse>(`/menu/${encodeURIComponent(id)}`);
+  },
 
-  async create(
-    request: CreateMenuRequest
-  ): Promise<MenuResponse> {
-    return api.post<MenuResponse>(
-      "/menu",
-      request
-    );
-  }
+  /**
+   * ============================================================
+   * CREATE MENU ITEM
+   * ============================================================
+   */
+  create(request: CreateMenuRequest): Promise<MenuResponse> {
+    return api.post<MenuResponse>("/menu", request);
+  },
 
-  async update(
-    id: string,
-    request: UpdateMenuRequest
-  ): Promise<MenuResponse> {
-    return api.patch<MenuResponse>(
-      `/menu/${id}`,
-      request
-    );
-  }
+  /**
+   * ============================================================
+   * UPDATE MENU ITEM
+   * ============================================================
+   */
+  update(id: string, request: UpdateMenuRequest): Promise<MenuResponse> {
+    return api.put<MenuResponse>(`/menu/${encodeURIComponent(id)}`, request);
+  },
 
-  async delete(id: string): Promise<void> {
-    return api.delete<void>(`/menu/${id}`);
-  }
-}
-
-export const menuService = new MenuService();
+  /**
+   * ============================================================
+   * DELETE MENU ITEM
+   * ============================================================
+   */
+  delete(id: string): Promise<void> {
+    return api.delete<void>(`/menu/${encodeURIComponent(id)}`);
+  },
+};

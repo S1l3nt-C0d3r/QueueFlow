@@ -1,13 +1,10 @@
-import {
-  TableEntity,
-  TableResponse,
-} from "./tables.types";
+import { TableEntity, TableResponse } from "./tables.types";
 
-export function toTableResponse(
-  entity: TableEntity
-): TableResponse {
+export function toTableResponse(entity: TableEntity): TableResponse {
   return {
-  tableToken: entity.tableToken,
+    id: entity.id,
+
+    tableToken: entity.tableToken,
 
     tableNumber: entity.tableNumber,
 
@@ -25,8 +22,6 @@ export function toTableResponse(
   };
 }
 
-export function toTableResponseList(
-  entities: TableEntity[]
-): TableResponse[] {
+export function toTableResponseList(entities: TableEntity[]): TableResponse[] {
   return entities.map(toTableResponse);
 }

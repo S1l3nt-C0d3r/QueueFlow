@@ -3,183 +3,143 @@ import { randomUUID } from "crypto";
 import { db } from "../../database/connection";
 
 import {
-  ORDER_STATUS,
-} from "../../shared/constants";
-
-import {
   OrderEntity,
-  SubmitOrderRequest,
+  OrderItemEntity,
+  CreateOrderRequest,
+  OrderTotals,
 } from "./orders.types";
 
-import {
-  DiningSessionEntity,
-} from "../dining-sessions/dining-sessions.types";
-
 export class OrdersRepository {
+  /**
+   * ============================================================
+   * ORDERS
+   * ============================================================
+   */
 
-  findAll(
-    restaurantId: string
-  ): OrderEntity[] {
-
-    return db.prepare(`
-      SELECT *
-      FROM orders
-      WHERE restaurantId = ?
-      ORDER BY createdAt DESC
-    `).all(
-      restaurantId
-    ) as OrderEntity[];
-
+  findAll(restaurantId: string): OrderEntity[] {
+    return db
+      .prepare(
+        `
+        SELECT *
+        FROM orders
+        WHERE restaurantId = ?
+        ORDER BY createdAt DESC
+      `,
+      )
+      .all(restaurantId) as OrderEntity[];
   }
 
-  findById(
+  findById(restaurantId: string, orderId: string): OrderEntity | undefined {
+    return db
+      .prepare(
+        `
+        SELECT *
+        FROM orders
+        WHERE restaurantId = ?
+          AND id = ?
+      `,
+      )
+      .get(restaurantId, orderId) as OrderEntity | undefined;
+  }
+
+  findBySession(restaurantId: string, sessionId: string): OrderEntity[] {
+    return db
+      .prepare(
+        `
+        SELECT *
+        FROM orders
+        WHERE restaurantId = ?
+          AND sessionId = ?
+        ORDER BY createdAt ASC
+      `,
+      )
+      .all(restaurantId, sessionId) as OrderEntity[];
+  }
+
+  /**
+   * ============================================================
+   * FIND PLACED ORDER BY SESSION
+   * ============================================================
+   *
+   * QueueFlow currently keeps the active order for a dining
+   * session as one order aggregate.
+   *
+   * Customer and waiter orders therefore append items to the
+   * same PLACED order until the order is completed/cancelled.
+   */
+
+  findPlacedBySession(
     restaurantId: string,
-    id: string
+    sessionId: string,
   ): OrderEntity | undefined {
-
-    return db.prepare(`
-      SELECT *
-      FROM orders
-      WHERE restaurantId = ?
-      AND id = ?
-    `).get(
-      restaurantId,
-      id
-    ) as OrderEntity | undefined;
-
+    return db
+      .prepare(
+        `
+        SELECT *
+        FROM orders
+        WHERE restaurantId = ?
+          AND sessionId = ?
+          AND status = 'PLACED'
+        ORDER BY createdAt ASC
+        LIMIT 1
+      `,
+      )
+      .get(restaurantId, sessionId) as OrderEntity | undefined;
   }
 
-  
-  findBySession(
-    restaurantId: string,
-    sessionId: string
-  ): OrderEntity[] {
+  /**
+   * ============================================================
+   * FIND ACTIVE ORDERS BY SESSION
+   * ============================================================
+   */
 
-    return db.prepare(`
-      SELECT *
-      FROM orders
-      WHERE restaurantId = ?
-      AND sessionId = ?
-      ORDER BY createdAt ASC
-    `).all(
-      restaurantId,
-      sessionId
-    ) as OrderEntity[];
-
+  findActiveBySession(restaurantId: string, sessionId: string): OrderEntity[] {
+    return db
+      .prepare(
+        `
+        SELECT *
+        FROM orders
+        WHERE restaurantId = ?
+          AND sessionId = ?
+          AND status NOT IN (
+            'COMPLETED',
+            'CANCELLED'
+          )
+        ORDER BY createdAt ASC
+      `,
+      )
+      .all(restaurantId, sessionId) as OrderEntity[];
   }
 
- findPlacedBySession(
-  restaurantId: string,
-  sessionId: string
-): OrderEntity | undefined {
-
-  return db.prepare(`
-    SELECT *
-    FROM orders
-    WHERE restaurantId = ?
-      AND sessionId = ?
-      AND status = ?
-    LIMIT 1
-  `).get(
-    restaurantId,
-    sessionId,
-    ORDER_STATUS.PLACED
-  ) as OrderEntity | undefined;
-
-}
-
-findActiveBySession(
-  restaurantId: string,
-  sessionId: string
-): OrderEntity[] {
-
-  return db.prepare(`
-    SELECT *
-    FROM orders
-    WHERE restaurantId = ?
-      AND sessionId = ?
-      AND status NOT IN (?, ?)
-    ORDER BY createdAt ASC
-  `).all(
-    restaurantId,
-    sessionId,
-    ORDER_STATUS.COMPLETED,
-    ORDER_STATUS.CANCELLED
-  ) as OrderEntity[];
-
-}
-
-  findCompletedBySession(
-  restaurantId: string,
-  sessionId: string
-): OrderEntity[] {
-
-  return db.prepare(`
-    SELECT *
-    FROM orders
-    WHERE restaurantId = ?
-      AND sessionId = ?
-      AND status = ?
-    ORDER BY createdAt ASC
-  `).all(
-    restaurantId,
-    sessionId,
-    ORDER_STATUS.COMPLETED
-  ) as OrderEntity[];
-
-}
-
-calculateSessionTotals(
-  restaurantId: string,
-  sessionId: string
-): {
-  subtotal: number;
-  discount: number;
-  tax: number;
-  grandTotal: number;
-} {
-  const result = db.prepare(`
-    SELECT
-      COALESCE(SUM(subtotal), 0) AS subtotal,
-      COALESCE(SUM(discount), 0) AS discount,
-      COALESCE(SUM(tax), 0) AS tax,
-      COALESCE(SUM(grandTotal), 0) AS grandTotal
-    FROM orders
-    WHERE restaurantId = ?
-      AND sessionId = ?
-      AND status = ?
-  `).get(
-    restaurantId,
-    sessionId,
-    ORDER_STATUS.COMPLETED
-  ) as {
-    subtotal: number;
-    discount: number;
-    tax: number;
-    grandTotal: number;
-  };
-
-  return result;
-}
+  /**
+   * ============================================================
+   * CREATE ORDER
+   * ============================================================
+   *
+   * waiterId is resolved by OrdersService from the dining
+   * session's waiterStaffId.
+   *
+   * The client never supplies waiterId directly.
+   */
 
   create(
     restaurantId: string,
-    session: DiningSessionEntity,
-    request: SubmitOrderRequest
+    waiterId: string,
+    request: CreateOrderRequest,
   ): OrderEntity {
+    const orderId = randomUUID();
 
-    const id = randomUUID();
+    const now = new Date().toISOString();
 
-    const now =
-      new Date().toISOString();
-
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO orders
       (
         id,
         restaurantId,
         sessionId,
         tableId,
+        waiterId,
         status,
         subtotal,
         discount,
@@ -190,37 +150,41 @@ calculateSessionTotals(
       )
       VALUES
       (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
+    `,
+    ).run(
+      orderId,
       restaurantId,
-      session.id,
-      session.tableId,
-      ORDER_STATUS.PLACED,
-      0,
-      0,
-      0,
-      0,
+      request.sessionId,
+      request.tableId,
+      waiterId,
+      request.status,
+      request.subtotal,
+      request.discount,
+      request.tax,
+      request.grandTotal,
       now,
-      now
+      now,
     );
 
-    return this.findById(
-      restaurantId,
-      id
-    )!;
-
+    return this.findById(restaurantId, orderId)!;
   }
+
+  /**
+   * ============================================================
+   * UPDATE ORDER TOTALS
+   * ============================================================
+   */
 
   updateTotals(
     restaurantId: string,
-    id: string,
+    orderId: string,
     subtotal: number,
     discount: number,
     tax: number,
-    grandTotal: number
+    grandTotal: number,
   ): void {
-
-    db.prepare(`
+    db.prepare(
+      `
       UPDATE orders
       SET
         subtotal = ?,
@@ -229,39 +193,177 @@ calculateSessionTotals(
         grandTotal = ?,
         updatedAt = ?
       WHERE restaurantId = ?
-      AND id = ?
-    `).run(
+        AND id = ?
+    `,
+    ).run(
       subtotal,
       discount,
       tax,
       grandTotal,
       new Date().toISOString(),
       restaurantId,
-      id
+      orderId,
     );
-
   }
 
-  updateStatus(
-    restaurantId: string,
-    orderId: string,
-    status: string
-  ): void {
+  /**
+   * ============================================================
+   * UPDATE ORDER STATUS
+   * ============================================================
+   */
 
-    db.prepare(`
+  updateStatus(restaurantId: string, orderId: string, status: string): void {
+    db.prepare(
+      `
       UPDATE orders
       SET
         status = ?,
         updatedAt = ?
       WHERE restaurantId = ?
-      AND id = ?
-    `).run(
-      status,
-      new Date().toISOString(),
-      restaurantId,
-      orderId
-    );
-
+        AND id = ?
+    `,
+    ).run(status, new Date().toISOString(), restaurantId, orderId);
   }
 
+  /**
+   * ============================================================
+   * ORDER TOTALS
+   * ============================================================
+   */
+
+  calculateSessionTotals(restaurantId: string, sessionId: string): OrderTotals {
+    const result = db
+      .prepare(
+        `
+          SELECT
+            COALESCE(
+              SUM(subtotal),
+              0
+            ) AS subtotal,
+
+            COALESCE(
+              SUM(discount),
+              0
+            ) AS discount,
+
+            COALESCE(
+              SUM(tax),
+              0
+            ) AS tax,
+
+            COALESCE(
+              SUM(grandTotal),
+              0
+            ) AS grandTotal
+
+          FROM orders
+
+          WHERE restaurantId = ?
+
+            AND sessionId = ?
+
+            AND status = 'COMPLETED'
+        `,
+      )
+      .get(restaurantId, sessionId) as OrderTotals;
+
+    return {
+      subtotal: Number(result.subtotal),
+
+      discount: Number(result.discount),
+
+      tax: Number(result.tax),
+
+      grandTotal: Number(result.grandTotal),
+    };
+  }
+
+  /**
+   * ============================================================
+   * ORDER ITEMS
+   * ============================================================
+   */
+
+  findItems(orderId: string): OrderItemEntity[] {
+    return db
+      .prepare(
+        `
+        SELECT *
+        FROM order_items
+        WHERE orderId = ?
+        ORDER BY createdAt ASC
+      `,
+      )
+      .all(orderId) as OrderItemEntity[];
+  }
+
+  /**
+   * ============================================================
+   * ADD ORDER ITEM
+   * ============================================================
+   */
+
+  addItem(
+    orderId: string,
+    item: {
+      menuItemId: string;
+      itemName: string;
+      quantity: number;
+      unitPrice: number;
+      totalPrice: number;
+      createdByType: string;
+      createdById: string;
+      takenByStaffId?: string;
+      notes?: string;
+    },
+  ): OrderItemEntity {
+    const id = randomUUID();
+
+    const createdAt = new Date().toISOString();
+
+    db.prepare(
+      `
+      INSERT INTO order_items
+      (
+        id,
+        orderId,
+        menuItemId,
+        itemName,
+        quantity,
+        unitPrice,
+        totalPrice,
+        createdByType,
+        createdById,
+        takenByStaffId,
+        notes,
+        createdAt
+      )
+      VALUES
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      id,
+      orderId,
+      item.menuItemId,
+      item.itemName,
+      item.quantity,
+      item.unitPrice,
+      item.totalPrice,
+      item.createdByType,
+      item.createdById,
+      item.takenByStaffId ?? null,
+      item.notes ?? null,
+      createdAt,
+    );
+
+    return db
+      .prepare(
+        `
+        SELECT *
+        FROM order_items
+        WHERE id = ?
+      `,
+      )
+      .get(id) as OrderItemEntity;
+  }
 }

@@ -9,232 +9,325 @@ import {
   TABLE_STATUS,
 } from "../../shared/constants";
 
-import {
-  CreateBillRequest,
-  BillResponse,
-} from "./billing.types";
+import { CreateBillRequest, BillResponse } from "./billing.types";
 
-import {
-  toBillResponse,
-  toBillResponseList,
-} from "./billing.mapper";
+import { toBillResponse, toBillResponseList } from "./billing.mapper";
 
 import { BillingRepository } from "./billing.repository";
+
 import { OrdersRepository } from "../orders/orders.repository";
+
 import { DiningSessionRepository } from "../dining-sessions/dining-sessions.repository";
+
 import { TablesRepository } from "../tables/tables.repository";
 
 export class BillingService {
   constructor(
-    private readonly repository =
-      new BillingRepository(),
+    private readonly repository = new BillingRepository(),
 
-    private readonly ordersRepository =
-      new OrdersRepository(),
+    private readonly ordersRepository = new OrdersRepository(),
 
-    private readonly diningSessionRepository =
-      new DiningSessionRepository(),
+    private readonly diningSessionRepository = new DiningSessionRepository(),
 
-    private readonly tablesRepository =
-    new TablesRepository()
+    private readonly tablesRepository = new TablesRepository(),
   ) {}
 
-  getAll(
-    restaurantId: string
-  ): BillResponse[] {
+  /**
+   * ============================================================
+   * GET ALL BILLS
+   * ============================================================
+   */
 
-    return toBillResponseList(
-      this.repository.findAll(
-        restaurantId
-      )
-    );
-
+  getAll(restaurantId: string): BillResponse[] {
+    return toBillResponseList(this.repository.findAll(restaurantId));
   }
 
-  getById(
-    restaurantId: string,
-    billId: string
-  ): BillResponse {
+  /**
+   * ============================================================
+   * GET BILL BY ID
+   * ============================================================
+   */
 
-    const bill =
-      this.repository.findById(
-        restaurantId,
-        billId
-      );
+  getById(restaurantId: string, billId: string): BillResponse {
+    const bill = this.repository.findById(restaurantId, billId);
 
     if (!bill) {
-      throw new AppError(
-        HTTP_STATUS.NOT_FOUND,
-        "Bill not found."
-      );
+      throw new AppError(HTTP_STATUS.NOT_FOUND, "Bill not found.");
     }
 
     return toBillResponse(bill);
-
   }
 
-  createBill(
-    restaurantId: string,
-    request: CreateBillRequest
-  ): BillResponse {
+  /**
+   * ============================================================
+   * CREATE BILL
+   * ============================================================
+   *
+   * This is used when the customer requests the bill.
+   *
+   * IMPORTANT:
+   *
+   * createdByStaffId from the request is NOT trusted.
+   *
+   * The responsible waiter is determined from:
+   *
+   *     dining_sessions.waiterStaffId
+   *
+   * This prevents a customer from choosing which staff member
+   * the bill is created under.
+   */
 
-    const existing =
-      this.repository.findBySession(
-        restaurantId,
-        request.sessionId
-      );
+  createBill(restaurantId: string, request: CreateBillRequest): BillResponse {
+    /**
+     * ----------------------------------------------------------
+     * Check for existing bill
+     * ----------------------------------------------------------
+     *
+     * Requesting the bill multiple times should not create
+     * duplicate bills.
+     */
+
+    const existing = this.repository.findBySession(
+      restaurantId,
+      request.sessionId,
+    );
 
     if (existing) {
       return toBillResponse(existing);
     }
 
-    const session =
-      this.diningSessionRepository.findById(
-        restaurantId,
-        request.sessionId
-      );
+    /**
+     * ----------------------------------------------------------
+     * Find dining session
+     * ----------------------------------------------------------
+     */
+
+    const session = this.diningSessionRepository.findById(
+      restaurantId,
+      request.sessionId,
+    );
 
     if (!session) {
-      throw new AppError(
-        HTTP_STATUS.NOT_FOUND,
-        "Dining session not found."
-      );
+      throw new AppError(HTTP_STATUS.NOT_FOUND, "Dining session not found.");
     }
 
-    if (
-      session.status !==
-      SESSION_STATUS.ACTIVE
-    ) {
+    /**
+     * ----------------------------------------------------------
+     * Verify session state
+     * ----------------------------------------------------------
+     */
+
+    if (session.status !== SESSION_STATUS.ACTIVE) {
       throw new AppError(
         HTTP_STATUS.BAD_REQUEST,
-        "Billing can only be generated for an active dining session."
+        "Billing can only be generated for an active dining session.",
       );
     }
 
-    const activeOrders =
-      this.ordersRepository.findActiveBySession(
-        restaurantId,
-        session.id
+    /**
+     * ----------------------------------------------------------
+     * Validate waiter assignment
+     * ----------------------------------------------------------
+     */
+
+    if (!session.waiterStaffId) {
+      throw new AppError(
+        HTTP_STATUS.BAD_REQUEST,
+        "No waiter is assigned to this dining session.",
       );
+    }
+
+    /**
+     * ----------------------------------------------------------
+     * Find active orders
+     * ----------------------------------------------------------
+     *
+     * There must not be an unfinished order when the bill is
+     * generated.
+     */
+
+    const activeOrders = this.ordersRepository.findActiveBySession(
+      restaurantId,
+      session.id,
+    );
 
     if (activeOrders.length > 0) {
       throw new AppError(
         HTTP_STATUS.BAD_REQUEST,
-        "Cannot generate bill while there are active orders."
+        "Cannot generate bill while there are active orders.",
       );
     }
 
-    const totals =
-      this.ordersRepository.calculateSessionTotals(
-        restaurantId,
-        session.id
-      );
+    /**
+     * ----------------------------------------------------------
+     * Calculate totals
+     * ----------------------------------------------------------
+     */
+
+    const totals = this.ordersRepository.calculateSessionTotals(
+      restaurantId,
+      session.id,
+    );
+
+    /**
+     * ----------------------------------------------------------
+     * Create bill
+     * ----------------------------------------------------------
+     */
 
     let bill;
 
     transaction(() => {
+      /**
+       * Change dining session to BILLING first.
+       */
 
-      this.diningSessionRepository.markBilling(
+      this.diningSessionRepository.markBilling(restaurantId, session.id);
+
+      /**
+       * IMPORTANT:
+       *
+       * We construct a new request here rather than passing the
+       * customer-provided createdByStaffId through.
+       *
+       * The waiter comes from the dining session.
+       */
+
+      const billRequest: CreateBillRequest = {
+        sessionId: session.id,
+
+        createdByStaffId: session.waiterStaffId,
+      };
+
+      bill = this.repository.create(
         restaurantId,
-        session.id
+
+        billRequest,
+
+        {
+          subtotal: totals.subtotal,
+
+          discount: totals.discount,
+
+          tax: totals.tax,
+
+          /**
+           * Service charge is intentionally zero for now.
+           *
+           * We will add the optional service-charge logic later.
+           */
+
+          serviceCharge: 0,
+
+          grandTotal: totals.grandTotal,
+        },
       );
-
-      bill =
-        this.repository.create(
-          restaurantId,
-          request,
-          {
-            subtotal: totals.subtotal,
-            discount: totals.discount,
-            tax: totals.tax,
-            serviceCharge: 0,
-            grandTotal: totals.grandTotal,
-          }
-        );
-
     })();
 
     return toBillResponse(bill!);
-
   }
 
-  markPaid(
-    restaurantId: string,
-    billId: string
-): BillResponse {
+  /**
+   * ============================================================
+   * MARK BILL PAID
+   * ============================================================
+   *
+   * Payment is handled by the restaurant.
+   *
+   * The customer does NOT call this method.
+   *
+   * Cashier/Admin/Waiter will eventually use the staff-side
+   * billing flow.
+   */
 
+  markPaid(restaurantId: string, billId: string): BillResponse {
     transaction(() => {
+      /**
+       * --------------------------------------------------------
+       * Find bill
+       * --------------------------------------------------------
+       */
 
-        // Find bill
-        const bill = this.repository.findById(
-            restaurantId,
-            billId
+      const bill = this.repository.findById(restaurantId, billId);
+
+      if (!bill) {
+        throw new AppError(HTTP_STATUS.NOT_FOUND, "Bill not found.");
+      }
+
+      /**
+       * --------------------------------------------------------
+       * Bill must still be open
+       * --------------------------------------------------------
+       */
+
+      if (bill.status !== BILL_STATUS.OPEN) {
+        throw new AppError(
+          HTTP_STATUS.BAD_REQUEST,
+          "Bill has already been paid.",
         );
+      }
 
-        if (!bill) {
-            throw new AppError(
-                HTTP_STATUS.NOT_FOUND,
-                "Bill not found."
-            );
-        }
+      /**
+       * --------------------------------------------------------
+       * Find dining session
+       * --------------------------------------------------------
+       */
 
-        // Bill must still be open
-        if (bill.status !== BILL_STATUS.OPEN) {
-            throw new AppError(
-                HTTP_STATUS.BAD_REQUEST,
-                "Bill has already been paid."
-            );
-        }
+      const session = this.diningSessionRepository.findById(
+        restaurantId,
+        bill.sessionId,
+      );
 
-        // Find dining session
-        const session =
-            this.diningSessionRepository.findById(
-                restaurantId,
-                bill.sessionId
-            );
+      if (!session) {
+        throw new AppError(HTTP_STATUS.NOT_FOUND, "Dining session not found.");
+      }
 
-        if (!session) {
-            throw new AppError(
-                HTTP_STATUS.NOT_FOUND,
-                "Dining session not found."
-            );
-        }
+      /**
+       * --------------------------------------------------------
+       * Session must be awaiting payment
+       * --------------------------------------------------------
+       */
 
-        // Session must be awaiting payment
-        if (session.status !== SESSION_STATUS.BILLING) {
-            throw new AppError(
-                HTTP_STATUS.BAD_REQUEST,
-                "Dining session is not awaiting payment."
-            );
-        }
-
-        // Mark bill as paid
-        this.repository.markPaid(
-            restaurantId,
-            bill.id
+      if (session.status !== SESSION_STATUS.BILLING) {
+        throw new AppError(
+          HTTP_STATUS.BAD_REQUEST,
+          "Dining session is not awaiting payment.",
         );
+      }
 
-        // Complete dining session
-        this.diningSessionRepository.complete(
-            restaurantId,
-            session.id,
-            SESSION_STATUS.COMPLETED
-        );
+      /**
+       * --------------------------------------------------------
+       * Mark bill paid
+       * --------------------------------------------------------
+       */
 
-        // Free table
-        this.tablesRepository.updateStatus(
-            restaurantId,
-            session.tableId,
-            TABLE_STATUS.AVAILABLE
-        );
+      this.repository.markPaid(restaurantId, bill.id);
 
+      /**
+       * --------------------------------------------------------
+       * Complete dining session
+       * --------------------------------------------------------
+       */
+
+      this.diningSessionRepository.complete(
+        restaurantId,
+        session.id,
+        SESSION_STATUS.COMPLETED,
+      );
+
+      /**
+       * --------------------------------------------------------
+       * Free table
+       * --------------------------------------------------------
+       */
+
+      this.tablesRepository.updateStatus(
+        restaurantId,
+        session.tableId,
+        TABLE_STATUS.AVAILABLE,
+      );
     })();
 
-    return this.getById(
-        restaurantId,
-        billId
-    );
-
-}
-
+    return this.getById(restaurantId, billId);
+  }
 }

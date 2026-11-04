@@ -1,33 +1,53 @@
 import { AnimatePresence, motion } from "motion/react";
+
 import { Users } from "lucide-react";
 
 import QueueCard from "./QueueCard";
-import {
-  QueueGridProps,
-  QueueStatusSection,
-} from "./types";
+
+import { QueueGridProps, QueueStatusSection } from "./types";
 
 export default function QueueGrid({
   entries,
-  onEdit,
-  onDelete,
   onCall,
   onSeat,
   onCancel,
-  onNoShow,
 }: QueueGridProps) {
+  /*
+   * ============================================================
+   * EMPTY STATE
+   * ============================================================
+   */
+
   if (entries.length === 0) {
     return (
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="rounded-2xl border border-white/20 bg-white/10 p-12 text-center backdrop-blur-xl"
+        initial={{
+          opacity: 0,
+        }}
+        animate={{
+          opacity: 1,
+        }}
+        className="
+          rounded-2xl
+          border
+          border-white/20
+          bg-white/10
+          p-12
+          text-center
+          backdrop-blur-xl
+        "
       >
-        <Users className="mx-auto mb-4 h-12 w-12 text-white/20" />
+        <Users
+          className="
+            mx-auto
+            mb-4
+            h-12
+            w-12
+            text-white/20
+          "
+        />
 
-        <h3 className="text-lg font-semibold text-white">
-          Queue Empty
-        </h3>
+        <h3 className="text-lg font-semibold text-white">Queue Empty</h3>
 
         <p className="mt-2 text-sm text-white/40">
           There are currently no customers in the queue.
@@ -36,93 +56,126 @@ export default function QueueGrid({
     );
   }
 
- const groupedEntries: QueueStatusSection[] = [
+  /*
+   * ============================================================
+   * GROUP QUEUE BY BACKEND STATUS
+   * ============================================================
+   *
+   * Current backend statuses:
+   *
+   * WAITING
+   * CALLED
+   * SEATED
+   * CANCELLED
+   *
+   * NO_SHOW is intentionally not included.
+   */
 
-  {
-    title: "Waiting Queue",
-    entries: entries.filter(
-      entry =>
-        entry.status === "WAITING"
-    ),
-  },
+  const groupedEntries: QueueStatusSection[] = [
+    {
+      title: "Waiting Queue",
 
-  {
-    title: "Ready To Seat",
-    entries: entries.filter(
-      entry =>
-        entry.status === "CALLED"
-    ),
-  },
+      entries: entries.filter((entry) => entry.status === "WAITING"),
+    },
 
-  {
-    title: "Recently Seated",
-    entries: entries.filter(
-      entry =>
-        entry.status === "SEATED"
-    ),
-  },
+    {
+      title: "Ready To Seat",
 
-  {
-    title: "Archived",
-    entries: entries.filter(
-      entry =>
-        entry.status === "CANCELLED" ||
-        entry.status === "NO_SHOW"
-    ),
-  },
+      entries: entries.filter((entry) => entry.status === "CALLED"),
+    },
 
-].filter(
-  section =>
-    section.entries.length > 0
-);
+    {
+      title: "Recently Seated",
 
-const sectionColors = {
+      entries: entries.filter((entry) => entry.status === "SEATED"),
+    },
 
-  "Waiting Queue":
-    "from-yellow-500 to-orange-500",
+    {
+      title: "Archived",
 
-  "Ready To Seat":
-    "from-green-500 to-emerald-500",
+      entries: entries.filter((entry) => entry.status === "CANCELLED"),
+    },
+  ].filter((section) => section.entries.length > 0);
 
-  "Recently Seated":
-    "from-cyan-500 to-blue-500",
+  /*
+   * ============================================================
+   * SECTION COLORS
+   * ============================================================
+   */
 
-  Archived:
-    "from-red-500 to-red-700",
+  const sectionColors: Record<string, string> = {
+    "Waiting Queue": "from-yellow-500 to-orange-500",
 
-};
+    "Ready To Seat": "from-green-500 to-emerald-500",
+
+    "Recently Seated": "from-cyan-500 to-blue-500",
+
+    Archived: "from-red-500 to-red-700",
+  };
+
+  /*
+   * ============================================================
+   * RENDER
+   * ============================================================
+   */
 
   return (
     <div className="space-y-8">
       {groupedEntries.map((section) => (
-        <section
-          key={section.title}
-          className="space-y-4"
-        >
-          <div className="flex items-center gap-3">
-            <div className={`h-10 w-1 rounded-full bg-gradient-to-b ${sectionColors[section.title]}`}/>
-            <h2 className="text-xl font-bold text-white">
-              {section.title}
-            </h2>
+        <section key={section.title} className="space-y-4">
+          {/* ==================================================
+                SECTION HEADER
+                ================================================== */}
 
-            <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/60">
+          <div className="flex items-center gap-3">
+            <div
+              className={`
+                  h-10
+                  w-1
+                  rounded-full
+                  bg-gradient-to-b
+                  ${sectionColors[section.title]}
+                `}
+            />
+
+            <h2 className="text-xl font-bold text-white">{section.title}</h2>
+
+            <span
+              className="
+                  rounded-full
+                  bg-white/10
+                  px-3
+                  py-1
+                  text-xs
+                  font-semibold
+                  text-white/60
+                "
+            >
               {section.entries.length}
             </span>
           </div>
 
-          <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
+          {/* ==================================================
+                CARDS
+                ================================================== */}
+
+          <div
+            className="
+                grid
+                gap-5
+                lg:grid-cols-2
+                xl:grid-cols-3
+              "
+          >
             <AnimatePresence>
               {section.entries.map((entry) => (
                 <QueueCard
-    key={entry.id}
-    entry={entry}
-    onEdit={onEdit}
-    onDelete={onDelete}
-    onCall={onCall}
-    onSeat={onSeat}
-    onCancel={onCancel}
-    onNoShow={onNoShow}
-/>
+                  key={entry.id}
+                  entry={entry}
+                  onCall={onCall}
+                  onSeat={onSeat}
+                  onCancel={onCancel}
+                />
               ))}
             </AnimatePresence>
           </div>

@@ -1,32 +1,51 @@
-import {
-  MenuItemEntity,
-  MenuItemResponse,
-} from "./menu.types";
+import { MenuItemEntity, MenuItemResponse } from "./menu.types";
 
-export function toMenuItemResponse(
-  entity: MenuItemEntity
-): MenuItemResponse {
+/*
+ * ============================================================
+ * ENTITY -> RESPONSE
+ * ============================================================
+ *
+ * SQLite stores boolean-like values as integers:
+ *
+ * active:
+ *   1 = true
+ *   0 = false
+ *
+ * available:
+ *   1 = true
+ *   0 = false
+ *
+ * The API exposes both as actual booleans.
+ */
+
+export function toMenuItemResponse(item: MenuItemEntity): MenuItemResponse {
   return {
-    id: entity.id,
+    id: item.id,
 
-    name: entity.name,
+    name: item.name,
 
-    description: entity.description,
+    description: item.description,
 
-    price: entity.price,
+    price: item.price,
 
-    active: Boolean(entity.active),
+    active: item.active === 1,
 
-    createdAt: entity.createdAt,
+    available: item.available === 1,
 
-    updatedAt: entity.updatedAt,
+    createdAt: item.createdAt,
+
+    updatedAt: item.updatedAt,
   };
 }
 
+/*
+ * ============================================================
+ * ENTITY LIST -> RESPONSE LIST
+ * ============================================================
+ */
+
 export function toMenuItemResponseList(
-  entities: MenuItemEntity[]
+  items: MenuItemEntity[],
 ): MenuItemResponse[] {
-  return entities.map(
-    toMenuItemResponse
-  );
+  return items.map(toMenuItemResponse);
 }

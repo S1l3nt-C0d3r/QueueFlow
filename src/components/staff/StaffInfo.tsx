@@ -3,24 +3,45 @@ import { motion } from "motion/react";
 export default function StaffInfo() {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="backdrop-blur-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/30 p-6 rounded-2xl shadow-2xl"
+      initial={{
+        opacity: 0,
+        y: 20,
+      }}
+      animate={{
+        opacity: 1,
+        y: 0,
+      }}
+      className="
+        rounded-2xl
+        border
+        border-blue-500/30
+        bg-gradient-to-br
+        from-blue-500/10
+        to-cyan-500/10
+        p-6
+        shadow-2xl
+        backdrop-blur-xl
+      "
     >
-      <h3 className="text-lg font-bold text-blue-300 mb-3">
-        Staff Login Instructions
+      <h3 className="mb-3 text-lg font-bold text-blue-300">
+        Staff Login & Account Management
       </h3>
 
-      <div className="space-y-2 text-blue-200 text-sm">
-        <p>✓ Each staff member gets a unique Staff Number (e.g. 1001, 1002, etc.)</p>
+      <div className="space-y-2 text-sm text-blue-200">
+        <p>✓ Each staff member receives a unique Staff Number.</p>
 
-        <p>✓ Admin sets a password for each staff member</p>
+        <p>✓ Admin sets the initial password when creating the account.</p>
 
-        <p>✓ Staff logs in using their Staff Number + Password</p>
+        <p>✓ Staff log in using their Staff Number and password.</p>
 
-        <p>✓ No need to wait for email confirmations</p>
+        <p>✓ No email confirmation is required for staff accounts.</p>
 
-        <p>✓ Admin can change staff roles anytime using the dropdown</p>
+        <p>✓ Admin can change a staff member's role using the role selector.</p>
+
+        <p>
+          ✓ Staff accounts can be deactivated without removing their historical
+          records.
+        </p>
       </div>
     </motion.div>
   );
